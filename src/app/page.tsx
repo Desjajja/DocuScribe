@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe } from "lucide-react";
-import { scrapeUrl, ScrapeUrlOutput } from '@/ai/flows/scrape-url-flow';
+import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 
 type Document = {
@@ -24,7 +23,7 @@ type Document = {
 
 export default function ScraperPage() {
   const [url, setUrl] = useState('');
-  const [pagesToScrape, setPagesToScrape] = useState('1');
+  const [maxPages, setMaxPages] = useState('5');
   const [scrapingMode, setScrapingMode] = useState<'aggregate' | 'separate'>('separate');
   const [isScraping, setIsScraping] = useState(false);
 
@@ -50,6 +49,16 @@ export default function ScraperPage() {
       return;
     }
 
+    const maxPagesNum = parseInt(maxPages, 10);
+    if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
+      toast({
+        title: "Invalid Number",
+        description: "Please enter a number between 1 and 50 for the maximum pages.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsScraping(true);
     toast({
       title: "Scraping Initiated",
@@ -59,7 +68,7 @@ export default function ScraperPage() {
     try {
       const results = await scrapeUrl({
         startUrl: url,
-        maxPages: parseInt(pagesToScrape, 10),
+        maxPages: maxPagesNum,
         mode: scrapingMode,
       });
 
@@ -115,7 +124,7 @@ export default function ScraperPage() {
               AI Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and choose how to scrape the content.
+              Enter a URL and choose how to scrape the content. The scraper will follow on-site links.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -130,7 +139,22 @@ export default function ScraperPage() {
                 required
               />
             </div>
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="maxPages">Maximum Pages</Label>
+                <Input
+                  id="maxPages"
+                  type="number"
+                  placeholder="5"
+                  value={maxPages}
+                  onChange={(e) => setMaxPages(e.target.value)}
+                  min="1"
+                  max="50"
+                  required
+                />
+              </div>
+            </div>
+             <div className="space-y-3">
                <Label>Scraping Mode</Label>
                <RadioGroup value={scrapingMode} onValueChange={(value) => setScrapingMode(value as 'aggregate' | 'separate')} className="flex gap-4">
                   <div>
@@ -148,27 +172,9 @@ export default function ScraperPage() {
                </RadioGroup>
                 <p className="text-sm text-muted-foreground">
                     {scrapingMode === 'separate' 
-                        ? "Create a separate library document for each relevant page found." 
-                        : "Combine content from relevant sub-pages into a single document."}
+                        ? "Create a separate library document for each page found." 
+                        : "Combine content from all found pages into a single document."}
                 </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="pages">Max Pages to Scrape</Label>
-              <Select value={pagesToScrape} onValueChange={setPagesToScrape}>
-                <SelectTrigger id="pages" className="w-full">
-                  <SelectValue placeholder="Select number of pages" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1 Page</SelectItem>
-                  <SelectItem value="2">2 Pages</SelectItem>
-                  <SelectItem value="3">3 Pages</SelectItem>
-                  <SelectItem value="5">5 Pages</SelectItem>
-                  <SelectItem value="10">10 Pages</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                The AI will process up to this many relevant pages.
-              </p>
             </div>
           </CardContent>
           <CardFooter>
