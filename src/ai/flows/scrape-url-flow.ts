@@ -23,7 +23,7 @@ const ScrapedPageSchema = z.object({
   url: z.string().url(),
   title: z.string(),
   content: z.string(),
-  image: z.string().url().optional(),
+  image: z.string().optional(),
 });
 type ScrapedPage = z.infer<typeof ScrapedPageSchema>;
 
@@ -76,7 +76,7 @@ const findRelevantLinks = ai.defineTool(
   }
 );
 
-// Helper function to fetch and parse a single URL
+// Helper function to fetch and process a single URL
 async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string; image?: string } | null> {
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -98,16 +98,24 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
 
     const title = $('title').first().text() || $('h1').first().text() || 'Untitled';
     
-    // Find the first image and resolve its URL
-    let firstImageSrc: string | undefined;
+    // Find the first image, download it, and convert to data URI
+    let firstImageDataUri: string | undefined;
     const firstImg = $('img').first();
     if (firstImg.length > 0) {
         const src = firstImg.attr('src');
         if (src) {
             try {
-                firstImageSrc = new URL(src, url).href;
+                const imageUrl = new URL(src, url).href;
+                const imageResponse = await fetch(imageUrl);
+                if (imageResponse.ok) {
+                    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+                    const buffer = await imageResponse.arrayBuffer();
+                    const base64 = Buffer.from(buffer).toString('base64');
+                    firstImageDataUri = `data:${contentType};base64,${base64}`;
+                }
             } catch (e) {
-                // Ignore invalid image URLs
+                console.error(`Failed to process image from ${src}:`, e);
+                // Ignore invalid image URLs or download failures
             }
         }
     }
@@ -122,7 +130,7 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
     // Convert the selected HTML to Markdown to preserve formatting
     const content = turndownService.turndown(contentHtml);
     
-    return { title, content, html, image: firstImageSrc };
+    return { title, content, html, image: firstImageDataUri };
   } catch (error) {
     console.error(`Error processing ${url}:`, error);
     return null;
