@@ -15,7 +15,7 @@ import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 
 
 type Document = {
@@ -156,6 +156,14 @@ export default function LibraryPage() {
     }
     return [];
   }, [selectedDoc]);
+  
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    if (isValid(date)) {
+        return format(date, 'yy/MM/dd-HH:mm');
+    }
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -227,7 +235,7 @@ export default function LibraryPage() {
                 </Dialog>
 
                 <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">
-                    {format(new Date(doc.lastUpdated), 'yy/MM/dd-HH:mm')}
+                    {formatDate(doc.lastUpdated)}
                 </div>
 
                 <div className="absolute top-2 right-2">
@@ -317,3 +325,5 @@ export default function LibraryPage() {
     </div>
   );
 }
+
+    
