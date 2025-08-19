@@ -18,6 +18,7 @@ type Document = {
   snippet: string;
   image: string;
   aiHint: string;
+  content: string;
 };
 
 
@@ -60,9 +61,10 @@ export default function ScraperPage() {
                 id: Date.now(),
                 url: prevJob.url,
                 title: `Scraped: ${prevJob.url.split('//')[1]?.split('/')[0] || prevJob.url}`,
-                snippet: `This is scraped content from ${prevJob.url} with a depth of ${prevJob.levels}. The content is simulated as pure text.`,
+                snippet: `Scraped content from ${prevJob.url} with a depth of ${prevJob.levels}.`,
                 image: 'https://placehold.co/600x400.png',
-                aiHint: 'web document'
+                aiHint: 'web document',
+                content: `This is the full, simulated text content scraped from ${prevJob.url}. It includes much more detail than the snippet. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam.`,
             };
             const updatedDocs = [newDoc, ...storedDocs];
             localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));

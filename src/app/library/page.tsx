@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from "@/components/ui/input";
 import { Search } from 'lucide-react';
 import Image from 'next/image';
@@ -13,6 +15,7 @@ type Document = {
   snippet: string;
   image: string;
   aiHint: string;
+  content: string;
 };
 
 const initialDocuments: Document[] = [
@@ -22,7 +25,8 @@ const initialDocuments: Document[] = [
     url: 'https://react.dev/learn',
     snippet: 'Learn how to build user interfaces with React, the popular JavaScript library for building component-based UIs.',
     image: 'https://placehold.co/600x400.png',
-    aiHint: 'code react'
+    aiHint: 'code react',
+    content: 'This is the full text content for "Getting Started with React". It would contain detailed tutorials, code examples, and explanations about React concepts like components, props, state, and hooks.'
   },
   {
     id: 2,
@@ -30,7 +34,8 @@ const initialDocuments: Document[] = [
     url: 'https://nextjs.org/docs',
     snippet: 'The React Framework for Production. Next.js gives you the best developer experience with all the features you need for production.',
     image: 'https://placehold.co/600x400.png',
-    aiHint: 'framework code'
+    aiHint: 'framework code',
+    content: 'This is the full text content for the Next.js documentation. It would cover topics such as routing, data fetching, rendering, deployment, and the App Router vs. Pages Router.'
   },
   {
     id: 3,
@@ -38,13 +43,15 @@ const initialDocuments: Document[] = [
     url: 'https://tailwindcss.com/docs',
     snippet: 'A utility-first CSS framework packed with classes that can be composed to build any design, directly in your markup.',
     image: 'https://placehold.co/600x400.png',
-    aiHint: 'design css'
+    aiHint: 'design css',
+    content: 'This is the full text content for the Tailwind CSS documentation. It provides a comprehensive guide to all utility classes, how to customize your theme, and how to set up Tailwind in your project.'
   },
 ];
 
 export default function LibraryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
 
   useEffect(() => {
     try {
@@ -93,20 +100,40 @@ export default function LibraryPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filteredDocuments.length > 0 ? (
           filteredDocuments.map(doc => (
-            <Card key={doc.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-               <a href={doc.url} target="_blank" rel="noopener noreferrer" className="block">
-                <div className="relative h-40 w-full">
-                    <Image src={doc.image} alt={doc.title} fill objectFit="cover" data-ai-hint={doc.aiHint} />
-                </div>
-                <CardHeader>
-                  <CardTitle>{doc.title}</CardTitle>
-                  <CardDescription className="text-xs">{doc.url}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{doc.snippet}</p>
-                </CardContent>
-               </a>
-            </Card>
+            <Dialog key={doc.id} onOpenChange={(isOpen) => !isOpen && setSelectedDoc(null)}>
+              <DialogTrigger asChild>
+                <Card 
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => setSelectedDoc(doc)}
+                >
+                  <div className="relative h-40 w-full">
+                      <Image src={doc.image} alt={doc.title} fill objectFit="cover" data-ai-hint={doc.aiHint} />
+                  </div>
+                  <CardHeader>
+                    <CardTitle>{doc.title}</CardTitle>
+                    <CardDescription className="text-xs truncate">{doc.url}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{doc.snippet}</p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+               {selectedDoc && selectedDoc.id === doc.id && (
+                 <DialogContent className="sm:max-w-3xl h-[80vh] flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>{selectedDoc.title}</DialogTitle>
+                    <DialogDescription>
+                      <a href={selectedDoc.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                        {selectedDoc.url}
+                      </a>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <ScrollArea className="flex-grow pr-6 -mr-6">
+                     <p className="text-sm whitespace-pre-wrap">{selectedDoc.content}</p>
+                  </ScrollArea>
+                </DialogContent>
+               )}
+            </Dialog>
           ))
         ) : (
           <p className="col-span-full text-center text-muted-foreground">No documents found.</p>
