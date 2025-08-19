@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
+import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 
 type Document = {
   id: number;
@@ -17,6 +18,7 @@ type Document = {
   content: string;
   image: string;
   aiHint: string;
+  hashtags: string[];
 };
 
 export default function ScraperPage() {
@@ -61,17 +63,25 @@ export default function ScraperPage() {
       const storedDocsString = localStorage.getItem('scrapedDocuments');
       const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
 
-      const newDocs: Document[] = results.map((result, i) => ({
-        id: Date.now() + i,
-        url: result.url,
-        title: result.title,
-        content: result.content,
-        image: 'https://placehold.co/600x400.png',
-        aiHint: 'web document',
+      const newDocs: Document[] = await Promise.all(results.map(async (result, i) => {
+        const hashtagResult = await generateHashtags({ content: result.content.substring(0, 1000) });
+        return {
+          id: Date.now() + i,
+          url: result.url,
+          title: result.title,
+          content: result.content,
+          image: 'https://placehold.co/600x400.png',
+          aiHint: 'web document',
+          hashtags: hashtagResult.hashtags,
+        };
       }));
 
       const updatedDocs = [...newDocs, ...storedDocs];
       localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+      
+      // This is a workaround to notify the library page of the change
+      // because the 'storage' event doesn't fire for the same page that made the change.
+      window.dispatchEvent(new Event('storage'));
 
       toast({
         title: "Scraping Complete",
