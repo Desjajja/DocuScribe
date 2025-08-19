@@ -1,120 +1,30 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Globe, History } from "lucide-react";
-import { Separator } from '@/components/ui/separator';
+import { Loader2, Globe } from "lucide-react";
+import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 
 type Document = {
   id: number;
   title: string;
   url: string;
-  snippet: string;
+  content: string;
   image: string;
   aiHint: string;
-  content: string;
-};
-
-
-type Job = {
-  id: number;
-  url: string;
-  pagesToScrape: number;
-  status: 'in-progress' | 'completed' | 'failed';
-  progress: number;
 };
 
 export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [pagesToScrape, setPagesToScrape] = useState('1');
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const prevJobsRef = useRef<Job[]>([]);
+  const [isScraping, setIsScraping] = useState(false);
 
-  // Update prevJobsRef whenever jobs changes
-  useEffect(() => {
-    prevJobsRef.current = jobs;
-  });
-
-  // Effect for showing toast on job completion and saving data
-  useEffect(() => {
-    const previouslyRunningJobs = prevJobsRef.current.filter(job => job.status === 'in-progress');
-    const currentlyCompletedJobs = jobs.filter(job => job.status === 'completed');
-
-    previouslyRunningJobs.forEach(prevJob => {
-      if (currentlyCompletedJobs.some(job => job.id === prevJob.id)) {
-        toast({
-          title: "Scraping Complete",
-          description: `Finished scraping ${prevJob.pagesToScrape} page(s) from ${prevJob.url}.`,
-        });
-
-        // Save the scraped data to localStorage
-        try {
-            const storedDocsString = localStorage.getItem('scrapedDocuments');
-            const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
-            
-            const newDocs: Document[] = Array.from({ length: prevJob.pagesToScrape }, (_, i) => {
-               const pageNum = i + 1;
-               const pageUrl = `${prevJob.url}/${pageNum}`;
-               return {
-                id: Date.now() + i,
-                url: pageUrl,
-                title: `Scraped: ${prevJob.url.split('//')[1]?.split('/')[0] || prevJob.url} - Page ${pageNum}`,
-                snippet: `Scraped content from ${pageUrl}. This is page ${pageNum} of ${prevJob.pagesToScrape} from the scraping job.`,
-                image: 'https://placehold.co/600x400.png',
-                aiHint: 'web document',
-                content: `This is the full, simulated text content for page ${pageNum} scraped from ${pageUrl}. It includes much more detail than the snippet. Based on your scraping strategy, this represents one node in the discovered page graph. An intelligent scraper would analyze links, find neighbors like 'next' or 'previous', and use an LLM to determine relevance before adding it to the graph and scraping it. This placeholder text simulates the final result of such a process.`,
-            }});
-
-            const updatedDocs = [...newDocs, ...storedDocs];
-            localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
-        } catch (error) {
-            console.error("Failed to save to localStorage", error);
-             toast({
-              title: "Storage Error",
-              description: "Could not save scraped documents.",
-              variant: "destructive"
-            });
-        }
-      }
-    });
-  }, [jobs]);
-
-
-  useEffect(() => {
-    const activeJob = jobs.find(job => job.status === 'in-progress');
-    let interval: NodeJS.Timeout | undefined;
-
-    if (activeJob) {
-      interval = setInterval(() => {
-        setJobs(prevJobs =>
-          prevJobs.map(j => {
-            if (j.id === activeJob.id && j.progress < 100) {
-              const newProgress = j.progress + 10;
-              if (newProgress >= 100) {
-                return { ...j, progress: 100, status: 'completed' };
-              }
-              return { ...j, progress: newProgress };
-            }
-            return j;
-          })
-        );
-      }, 500);
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [jobs]);
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) {
       toast({
@@ -125,36 +35,60 @@ export default function ScraperPage() {
       return;
     }
 
-    // A simple URL validation
     try {
-        new URL(url);
+      new URL(url);
     } catch (_) {
-        toast({
-            title: "Invalid URL",
-            description: "Please enter a valid URL.",
-            variant: "destructive",
-        });
-        return;
+      toast({
+        title: "Invalid URL",
+        description: "Please enter a valid URL.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    const newJob: Job = {
-      id: Date.now(),
-      url,
-      pagesToScrape: parseInt(pagesToScrape, 10),
-      status: 'in-progress',
-      progress: 0,
-    };
-
-    setJobs(prevJobs => [newJob, ...prevJobs]);
-
+    setIsScraping(true);
     toast({
       title: "Scraping Initiated",
-      description: `Scraping ${url} for ${pagesToScrape} page(s).`,
+      description: `Scraping ${url}... This may take a moment.`,
     });
-    setUrl('');
-  };
 
-  const isScraping = jobs.some(job => job.status === 'in-progress');
+    try {
+      const results = await scrapeUrl({
+        startUrl: url,
+        maxPages: parseInt(pagesToScrape, 10),
+      });
+
+      const storedDocsString = localStorage.getItem('scrapedDocuments');
+      const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
+
+      const newDocs: Document[] = results.map((result, i) => ({
+        id: Date.now() + i,
+        url: result.url,
+        title: result.title,
+        content: result.content,
+        image: 'https://placehold.co/600x400.png',
+        aiHint: 'web document',
+      }));
+
+      const updatedDocs = [...newDocs, ...storedDocs];
+      localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+
+      toast({
+        title: "Scraping Complete",
+        description: `Successfully scraped and saved ${results.length} page(s).`,
+      });
+      setUrl('');
+    } catch (error) {
+      console.error("Scraping failed:", error);
+      toast({
+        title: "Scraping Failed",
+        description: "An error occurred during the scraping process.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsScraping(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -163,10 +97,10 @@ export default function ScraperPage() {
           <CardHeader>
             <CardTitle className="text-2xl flex items-center gap-2">
               <Globe className="w-6 h-6"/>
-              Web Scraper
+              AI Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and select how many pages to scrape.
+              Enter a URL and select how many relevant pages to find and scrape.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -175,7 +109,7 @@ export default function ScraperPage() {
               <Input
                 id="url"
                 type="url"
-                placeholder="https://example.com"
+                placeholder="https://example.com/docs"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 required
@@ -196,7 +130,7 @@ export default function ScraperPage() {
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                Simulates finding and scraping a number of linked pages.
+                The AI will try to find and scrape this many relevant pages.
               </p>
             </div>
           </CardContent>
@@ -205,7 +139,7 @@ export default function ScraperPage() {
               {isScraping ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scraping in Progress...
+                  Scraping...
                 </>
               ) : (
                 'Start Scraping'
@@ -214,34 +148,6 @@ export default function ScraperPage() {
           </CardFooter>
         </form>
       </Card>
-
-      {jobs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              Scraping History
-            </CardTitle>
-            <CardDescription>
-              Overview of your recent scraping jobs.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {jobs.map((job, index) => (
-              <React.Fragment key={job.id}>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <p className="font-medium truncate" title={job.url}>{job.url}</p>
-                    <p className="text-sm text-muted-foreground capitalize">{job.status}</p>
-                  </div>
-                  <Progress value={job.progress} />
-                </div>
-                {index < jobs.length - 1 && <Separator />}
-              </React.Fragment>
-            ))}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

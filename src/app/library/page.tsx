@@ -12,7 +12,6 @@ type Document = {
   id: number;
   title: string;
   url: string;
-  snippet: string;
   image: string;
   aiHint: string;
   content: string;
@@ -23,28 +22,9 @@ const initialDocuments: Document[] = [
     id: 1,
     title: 'Getting Started with React',
     url: 'https://react.dev/learn',
-    snippet: 'Learn how to build user interfaces with React, the popular JavaScript library for building component-based UIs.',
     image: 'https://placehold.co/600x400.png',
     aiHint: 'code react',
-    content: 'This is the full text content for "Getting Started with React". It would contain detailed tutorials, code examples, and explanations about React concepts like components, props, state, and hooks.'
-  },
-  {
-    id: 2,
-    title: 'Next.js Documentation',
-    url: 'https://nextjs.org/docs',
-    snippet: 'The React Framework for Production. Next.js gives you the best developer experience with all the features you need for production.',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'framework code',
-    content: 'This is the full text content for the Next.js documentation. It would cover topics such as routing, data fetching, rendering, deployment, and the App Router vs. Pages Router.'
-  },
-  {
-    id: 3,
-    title: 'Tailwind CSS Docs',
-    url: 'https://tailwindcss.com/docs',
-    snippet: 'A utility-first CSS framework packed with classes that can be composed to build any design, directly in your markup.',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'design css',
-    content: 'This is the full text content for the Tailwind CSS documentation. It provides a comprehensive guide to all utility classes, how to customize your theme, and how to set up Tailwind in your project.'
+    content: 'This is an example document. Scrape a website to add real content to your library.'
   },
 ];
 
@@ -60,7 +40,6 @@ export default function LibraryPage() {
         const storedDocs = JSON.parse(storedDocsString);
         setDocuments(storedDocs);
       } else {
-        // If no docs are in storage, use the initial set and store them.
         setDocuments(initialDocuments);
         localStorage.setItem('scrapedDocuments', JSON.stringify(initialDocuments));
       }
@@ -75,7 +54,7 @@ export default function LibraryPage() {
     if (!searchTerm) return documents;
     return documents.filter(doc =>
       doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.snippet.toLowerCase().includes(searchTerm.toLowerCase())
+      doc.content.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, documents]);
 
@@ -103,18 +82,18 @@ export default function LibraryPage() {
             <Dialog key={doc.id} onOpenChange={(isOpen) => !isOpen && setSelectedDoc(null)}>
               <DialogTrigger asChild>
                 <Card 
-                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer flex flex-col"
                   onClick={() => setSelectedDoc(doc)}
                 >
                   <div className="relative h-40 w-full">
-                      <Image src={doc.image} alt={doc.title} fill objectFit="cover" data-ai-hint={doc.aiHint} />
+                      <Image src={doc.image} alt={doc.title} fill style={{objectFit:"cover"}} data-ai-hint={doc.aiHint} />
                   </div>
-                  <CardHeader>
-                    <CardTitle>{doc.title}</CardTitle>
-                    <CardDescription className="text-xs truncate">{doc.url}</CardDescription>
+                  <CardHeader className="flex-grow">
+                    <CardTitle className="line-clamp-2">{doc.title}</CardTitle>
+                    <CardDescription className="text-xs truncate pt-1">{doc.url}</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground">{doc.snippet}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-3">{doc.content}</p>
                   </CardContent>
                 </Card>
               </DialogTrigger>
@@ -136,7 +115,7 @@ export default function LibraryPage() {
             </Dialog>
           ))
         ) : (
-          <p className="col-span-full text-center text-muted-foreground">No documents found.</p>
+          <p className="col-span-full text-center text-muted-foreground">No documents found. Try scraping a website!</p>
         )}
       </div>
     </div>
