@@ -25,14 +25,14 @@ type Document = {
 type Job = {
   id: number;
   url: string;
-  levels: number;
+  pagesToScrape: number;
   status: 'in-progress' | 'completed' | 'failed';
   progress: number;
 };
 
 export default function ScraperPage() {
   const [url, setUrl] = useState('');
-  const [levels, setLevels] = useState('1');
+  const [pagesToScrape, setPagesToScrape] = useState('1');
   const [jobs, setJobs] = useState<Job[]>([]);
   const prevJobsRef = useRef<Job[]>([]);
 
@@ -41,7 +41,7 @@ export default function ScraperPage() {
     prevJobsRef.current = jobs;
   });
 
-  // Effect for showing toast on job completion
+  // Effect for showing toast on job completion and saving data
   useEffect(() => {
     const previouslyRunningJobs = prevJobsRef.current.filter(job => job.status === 'in-progress');
     const currentlyCompletedJobs = jobs.filter(job => job.status === 'completed');
@@ -50,29 +50,34 @@ export default function ScraperPage() {
       if (currentlyCompletedJobs.some(job => job.id === prevJob.id)) {
         toast({
           title: "Scraping Complete",
-          description: `Finished scraping ${prevJob.url}.`,
+          description: `Finished scraping ${prevJob.pagesToScrape} page(s) from ${prevJob.url}.`,
         });
 
         // Save the scraped data to localStorage
         try {
             const storedDocsString = localStorage.getItem('scrapedDocuments');
             const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
-            const newDoc: Document = {
-                id: Date.now(),
-                url: prevJob.url,
-                title: `Scraped: ${prevJob.url.split('//')[1]?.split('/')[0] || prevJob.url}`,
-                snippet: `Scraped content from ${prevJob.url} with a depth of ${prevJob.levels}.`,
+            
+            const newDocs: Document[] = Array.from({ length: prevJob.pagesToScrape }, (_, i) => {
+               const pageNum = i + 1;
+               const pageUrl = `${prevJob.url}/${pageNum}`;
+               return {
+                id: Date.now() + i,
+                url: pageUrl,
+                title: `Scraped: ${prevJob.url.split('//')[1]?.split('/')[0] || prevJob.url} - Page ${pageNum}`,
+                snippet: `Scraped content from ${pageUrl}. This is page ${pageNum} of ${prevJob.pagesToScrape} from the scraping job.`,
                 image: 'https://placehold.co/600x400.png',
                 aiHint: 'web document',
-                content: `This is the full, simulated text content scraped from ${prevJob.url}. It includes much more detail than the snippet. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed non risus. Suspendisse lectus tortor, dignissim sit amet, adipiscing nec, ultricies sed, dolor. Cras elementum ultrices diam. Maecenas ligula massa, varius a, semper congue, euismod non, mi. Proin porttitor, orci nec nonummy molestie, enim est eleifend mi, non fermentum diam nisl sit amet erat. Duis semper. Duis arcu massa, scelerisque vitae, consequat in, pretium a, enim. Pellentesque congue. Ut in risus volutpat libero pharetra tempor. Cras vestibulum bibendum augue. Praesent egestas leo in pede. Praesent blandit odio eu enim. Pellentesque sed dui ut augue blandit sodales. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Aliquam nibh. Mauris ac mauris sed pede pellentesque fermentum. Maecenas adipiscing ante non diam.`,
-            };
-            const updatedDocs = [newDoc, ...storedDocs];
+                content: `This is the full, simulated text content for page ${pageNum} scraped from ${pageUrl}. It includes much more detail than the snippet. Based on your scraping strategy, this represents one node in the discovered page graph. An intelligent scraper would analyze links, find neighbors like 'next' or 'previous', and use an LLM to determine relevance before adding it to the graph and scraping it. This placeholder text simulates the final result of such a process.`,
+            }});
+
+            const updatedDocs = [...newDocs, ...storedDocs];
             localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
         } catch (error) {
             console.error("Failed to save to localStorage", error);
              toast({
               title: "Storage Error",
-              description: "Could not save scraped document.",
+              description: "Could not save scraped documents.",
               variant: "destructive"
             });
         }
@@ -135,7 +140,7 @@ export default function ScraperPage() {
     const newJob: Job = {
       id: Date.now(),
       url,
-      levels: parseInt(levels, 10),
+      pagesToScrape: parseInt(pagesToScrape, 10),
       status: 'in-progress',
       progress: 0,
     };
@@ -144,7 +149,7 @@ export default function ScraperPage() {
 
     toast({
       title: "Scraping Initiated",
-      description: `Scraping ${url} with ${levels} levels.`,
+      description: `Scraping ${url} for ${pagesToScrape} page(s).`,
     });
     setUrl('');
   };
@@ -161,7 +166,7 @@ export default function ScraperPage() {
               Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and select the scraping depth to begin.
+              Enter a URL and select how many pages to scrape.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -177,21 +182,21 @@ export default function ScraperPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="depth">Scraping Depth</Label>
-              <Select value={levels} onValueChange={setLevels}>
-                <SelectTrigger id="depth" className="w-full">
-                  <SelectValue placeholder="Select levels" />
+              <Label htmlFor="pages">Pages to Scrape</Label>
+              <Select value={pagesToScrape} onValueChange={setPagesToScrape}>
+                <SelectTrigger id="pages" className="w-full">
+                  <SelectValue placeholder="Select number of pages" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">1 Level</SelectItem>
-                  <SelectItem value="2">2 Levels</SelectItem>
-                  <SelectItem value="3">3 Levels</SelectItem>
-                  <SelectItem value="4">4 Levels</SelectItem>
-                  <SelectItem value="5">5 Levels</SelectItem>
+                  <SelectItem value="1">1 Page</SelectItem>
+                  <SelectItem value="2">2 Pages</SelectItem>
+                  <SelectItem value="3">3 Pages</SelectItem>
+                  <SelectItem value="4">4 Pages</SelectItem>
+                  <SelectItem value="5">5 Pages</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                How many links deep to follow from the initial URL.
+                Simulates finding and scraping a number of linked pages.
               </p>
             </div>
           </CardContent>
