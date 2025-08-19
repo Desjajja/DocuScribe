@@ -12,6 +12,7 @@ import { z } from 'genkit';
 
 const GenerateHashtagsInputSchema = z.object({
   content: z.string().describe('The document content to generate hashtags from.'),
+  url: z.string().url().describe('The source URL of the content.'),
 });
 export type GenerateHashtagsInput = z.infer<typeof GenerateHashtagsInputSchema>;
 
@@ -27,12 +28,11 @@ export async function generateHashtags(input: GenerateHashtagsInput): Promise<Ge
 const prompt = ai.definePrompt({
   name: 'generateHashtagsPrompt',
   input: { schema: GenerateHashtagsInputSchema },
-  output: { schema: GenerateHashtagsOutputSchema },
+  output: { schema: z.object({ hashtags: z.array(z.string()) }) },
   prompt: `You are an expert in summarizing and tagging content.
-  Analyze the following document content and generate a list of 2-3 relevant hashtags.
-  The first hashtag should be the primary technology or topic. The subsequent hashtags should be broader categories or fields.
+  Analyze the following document content and generate a list of 1-2 relevant, broader category hashtags.
   The hashtags should be concise, relevant to the main topics, and should not include the '#' symbol.
-  For example, if the content is about React Hooks, a good output would be: ["react", "frontend", "javascript"].
+  For example, if the content is about React Hooks, a good output would be: ["frontend", "javascript"]. Do not include the primary technology name.
 
   Document Content:
   {{{content}}}
@@ -45,8 +45,28 @@ const generateHashtagsFlow = ai.defineFlow(
     inputSchema: GenerateHashtagsInputSchema,
     outputSchema: GenerateHashtagsOutputSchema,
   },
-  async (input) => {
-    const { output } = await prompt(input);
-    return output!;
+  async ({ url, content }) => {
+    // Extract the technology name from the URL
+    let techName = '';
+    try {
+      const path = new URL(url).pathname;
+      // Find the most likely name from the path segments
+      const segments = path.split('/').filter(s => s);
+      if (segments.length > 0) {
+        techName = segments[segments.length - 1].toLowerCase();
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+
+    const { output } = await prompt({ content, url });
+    const aiHashtags = output?.hashtags || [];
+    
+    // Ensure the tech name is the first hashtag, if found
+    const finalHashtags = techName ? [techName, ...aiHashtags] : aiHashtags;
+    
+    // Remove duplicates and limit to 3
+    const uniqueHashtags = [...new Set(finalHashtags)];
+    return { hashtags: uniqueHashtags.slice(0, 3) };
   }
 );

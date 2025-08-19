@@ -85,7 +85,7 @@ export default function ScraperPage() {
 
       // Generate hashtags from the aggregated content.
       const contentSample = compilation.content.substring(0, 4000);
-      const hashtagResult = await generateHashtags({ content: contentSample });
+      const hashtagResult = await generateHashtags({ content: contentSample, url: compilation.url });
 
       const newDoc: Document = {
         id: Date.now(),
