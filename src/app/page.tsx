@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Globe, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, Globe, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 
@@ -97,20 +97,22 @@ export default function ScraperPage() {
   }, [updateJob]);
 
   useEffect(() => {
-    jobs.forEach(job => {
-      if (job.status === 'complete' && job.result) {
-        toast({
-          title: "Compilation Complete",
-          description: `Successfully scraped "${job.result.title}". Check your library.`,
-        });
-      } else if (job.status === 'failed') {
-        toast({
-          title: "Scraping Failed",
-          description: job.error,
-          variant: "destructive",
-        });
-      }
-    });
+    const completedJob = jobs.find(job => job.status === 'complete' && job.result);
+    if (completedJob && completedJob.result) {
+      toast({
+        title: "Compilation Complete",
+        description: `Successfully scraped "${completedJob.result.title}". Check your library.`,
+      });
+    }
+
+    const failedJob = jobs.find(job => job.status === 'failed');
+    if (failedJob) {
+       toast({
+        title: "Scraping Failed",
+        description: failedJob.error,
+        variant: "destructive",
+      });
+    }
   }, [jobs]);
 
 
@@ -163,6 +165,14 @@ export default function ScraperPage() {
   };
   
   const isScraping = jobs.some(job => job.status === 'scraping' || job.status === 'generating_hashtags');
+
+  const handleClearHistory = () => {
+    setJobs([]);
+    toast({
+        title: "History Cleared",
+        description: "All scraping tasks have been removed.",
+    });
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -220,7 +230,13 @@ export default function ScraperPage() {
 
       {jobs.length > 0 && (
         <div className="w-full max-w-lg mx-auto space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Scraping Tasks</h2>
+            <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold tracking-tight">Scraping Tasks</h2>
+                <Button variant="outline" size="sm" onClick={handleClearHistory}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Clear History
+                </Button>
+            </div>
             {jobs.map((job) => (
               <Card key={job.id}>
                 <CardHeader className="pb-2">
