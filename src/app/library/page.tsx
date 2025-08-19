@@ -13,6 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Search, MoreVertical, Edit, Trash2, Download } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 
 type Document = {
   id: number;
@@ -199,7 +202,11 @@ export default function LibraryPage() {
                              <AccordionItem value={`item-${index}`} key={index}>
                                 <AccordionTrigger><b>{section.title}</b></AccordionTrigger>
                                 <AccordionContent>
-                                    <p className="text-sm whitespace-pre-wrap">{section.content}</p>
+                                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {section.content}
+                                        </ReactMarkdown>
+                                    </div>
                                 </AccordionContent>
                              </AccordionItem>
                           ))}
@@ -254,7 +261,11 @@ export default function LibraryPage() {
                 <CardDescription className="text-xs truncate pt-1">{doc.url}</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground line-clamp-3">{doc.content}</p>
+                 <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['h1', 'h2', 'h3', 'h4', 'h5', 'h6']}>
+                        {doc.content.split('\n\n---\n\n')[0].split('\n').slice(3).join('\n').substring(0, 150) + '...'}
+                    </ReactMarkdown>
+                </div>
               </CardContent>
               <CardFooter className="flex flex-wrap gap-2 pt-2">
                   {doc.hashtags?.map(tag => (
@@ -291,5 +302,3 @@ export default function LibraryPage() {
     </div>
   );
 }
-
-    

@@ -10,6 +10,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import * as cheerio from 'cheerio';
+import TurndownService from 'turndown';
 
 // Define input and output schemas
 const ScrapeUrlInputSchema = z.object({
@@ -79,23 +80,35 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!response.ok) {
-      // If response is not ok (e.g., 404), throw to be caught by the catch block.
       throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
     }
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Remove non-content elements
+    // Initialize Turndown service to convert HTML to Markdown
+    const turndownService = new TurndownService({
+        headingStyle: 'atx',
+        codeBlockStyle: 'fenced',
+    });
+    
+    // Remove non-content elements before processing
     $('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], form, aside').remove();
 
     const title = $('title').first().text() || $('h1').first().text() || 'Untitled';
-    // Extract text, normalize whitespace, and remove excessive blank lines
-    const content = $('body').text().replace(/\s\s+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    
+    // Select the main content area, falling back to the body
+    let contentHtml = $('main').html() || $('article').html() || $('body').html();
+
+    if (!contentHtml) {
+        return null;
+    }
+
+    // Convert the selected HTML to Markdown to preserve formatting
+    const content = turndownService.turndown(contentHtml);
     
     return { title, content, html };
   } catch (error) {
     console.error(`Error processing ${url}:`, error);
-    // Return null to indicate failure, so the caller can ignore this page.
     return null;
   }
 }
@@ -123,7 +136,6 @@ const scrapeUrlFlow = ai.defineFlow(
 
       const pageData = await fetchAndProcessUrl(currentUrl);
 
-      // If pageData is null (due to fetch error), skip to the next URL.
       if (!pageData) {
         continue;
       }
