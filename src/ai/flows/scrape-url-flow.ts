@@ -23,6 +23,7 @@ const ScrapedPageSchema = z.object({
   url: z.string().url(),
   title: z.string(),
   content: z.string(),
+  image: z.string().url().optional(),
 });
 type ScrapedPage = z.infer<typeof ScrapedPageSchema>;
 
@@ -76,11 +77,12 @@ const findRelevantLinks = ai.defineTool(
 );
 
 // Helper function to fetch and parse a single URL
-async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string } | null> {
+async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string; image?: string } | null> {
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+        console.warn(`Skipping ${url}: Failed to fetch with status ${response.status}`);
+        return null; // Return null to indicate failure
     }
     const html = await response.text();
     const $ = cheerio.load(html);
@@ -96,6 +98,20 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
 
     const title = $('title').first().text() || $('h1').first().text() || 'Untitled';
     
+    // Find the first image and resolve its URL
+    let firstImageSrc: string | undefined;
+    const firstImg = $('img').first();
+    if (firstImg.length > 0) {
+        const src = firstImg.attr('src');
+        if (src) {
+            try {
+                firstImageSrc = new URL(src, url).href;
+            } catch (e) {
+                // Ignore invalid image URLs
+            }
+        }
+    }
+    
     // Select the main content area, falling back to the body
     let contentHtml = $('main').html() || $('article').html() || $('body').html();
 
@@ -106,7 +122,7 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
     // Convert the selected HTML to Markdown to preserve formatting
     const content = turndownService.turndown(contentHtml);
     
-    return { title, content, html };
+    return { title, content, html, image: firstImageSrc };
   } catch (error) {
     console.error(`Error processing ${url}:`, error);
     return null;
@@ -123,7 +139,8 @@ const scrapeUrlFlow = ai.defineFlow(
   async ({ startUrl, maxPages }) => {
     const visitedUrls = new Set<string>();
     const urlQueue: string[] = [startUrl];
-    const results: ScrapedPage[] = [];
+    const results: Omit<ScrapedPage, 'image'>[] = [];
+    let coverImage: string | undefined;
 
     while (urlQueue.length > 0 && visitedUrls.size < maxPages) {
       const currentUrl = urlQueue.shift();
@@ -140,7 +157,12 @@ const scrapeUrlFlow = ai.defineFlow(
         continue;
       }
       
-      const { title, content, html } = pageData;
+      const { title, content, html, image } = pageData;
+      
+      // Set the cover image from the very first successfully scraped page
+      if (!coverImage && image) {
+          coverImage = image;
+      }
 
       if (content) {
         results.push({ url: currentUrl, title, content });
@@ -165,7 +187,7 @@ const scrapeUrlFlow = ai.defineFlow(
     let compilationTitle = 'Documentation Compilation';
     try {
       const path = new URL(startUrl).pathname;
-      const segments = path.split('/').filter(s => s);
+      const segments = path.split('/').filter(s => s && s.toLowerCase() !== 'docs');
       if (segments.length > 0) {
         compilationTitle = segments[segments.length - 1];
       }
@@ -178,6 +200,7 @@ const scrapeUrlFlow = ai.defineFlow(
       url: startUrl,
       title: compilationTitle,
       content: aggregatedContent,
+      image: coverImage,
     }];
   }
 );

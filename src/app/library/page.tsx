@@ -15,6 +15,7 @@ import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { format } from 'date-fns';
 
 
 type Document = {
@@ -25,6 +26,7 @@ type Document = {
   aiHint: string;
   content: string;
   hashtags: string[];
+  lastUpdated: string;
 };
 
 type ParsedSection = {
@@ -41,7 +43,8 @@ const initialDocuments: Document[] = [
     image: 'https://placehold.co/600x400.png',
     aiHint: 'code react',
     content: '## Getting Started\n\nURL: https://react.dev/learn\n\nThis is an example document. Scrape a website to add real content to your library.',
-    hashtags: ['react', 'javascript', 'frontend']
+    hashtags: ['react', 'javascript', 'frontend'],
+    lastUpdated: new Date().toISOString(),
   },
 ];
 
@@ -98,7 +101,7 @@ export default function LibraryPage() {
   const handleSaveRename = () => {
     if (!editingDoc || !newTitle.trim()) return;
     const updatedDocs = documents.map(d =>
-      d.id === editingDoc.id ? { ...d, title: newTitle.trim() } : d
+      d.id === editingDoc.id ? { ...d, title: newTitle.trim(), lastUpdated: new Date().toISOString() } : d
     );
     setDocuments(updatedDocs);
     localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
@@ -183,7 +186,14 @@ export default function LibraryPage() {
                 <Dialog onOpenChange={(isOpen) => !isOpen && setSelectedDoc(null)}>
                   <DialogTrigger asChild>
                     <div className="relative h-40 w-full cursor-pointer" onClick={() => setSelectedDoc(doc)}>
-                      <Image src={doc.image} alt={doc.title} fill style={{ objectFit: "cover" }} data-ai-hint={doc.aiHint} />
+                      <Image 
+                        src={doc.image} 
+                        alt={doc.title} 
+                        fill 
+                        style={{ objectFit: "cover" }} 
+                        data-ai-hint={doc.aiHint}
+                        onError={(e) => { e.currentTarget.src = 'https://placehold.co/600x400.png'; }}
+                      />
                     </div>
                   </DialogTrigger>
                   {selectedDoc && selectedDoc.id === doc.id && (
@@ -215,6 +225,11 @@ export default function LibraryPage() {
                     </DialogContent>
                   )}
                 </Dialog>
+
+                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">
+                    {format(new Date(doc.lastUpdated), 'yy/MM/dd-HH:mm')}
+                </div>
+
                 <div className="absolute top-2 right-2">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>

@@ -19,6 +19,7 @@ type Document = {
   image: string;
   aiHint: string;
   hashtags: string[];
+  lastUpdated: string;
 };
 
 type Job = {
@@ -71,9 +72,10 @@ export default function ScraperPage() {
         url: compilation.url,
         title: compilation.title,
         content: compilation.content,
-        image: 'https://placehold.co/600x400.png',
+        image: compilation.image || 'https://placehold.co/600x400.png',
         aiHint: 'web document compilation',
         hashtags: hashtagResult.hashtags,
+        lastUpdated: new Date().toISOString(),
       };
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
