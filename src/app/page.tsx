@@ -135,6 +135,9 @@ export default function ScraperPage() {
     const maxPagesParam = searchParams.get('maxPages');
 
     if (updateUrl && updateId && maxPagesParam) {
+      // Clean the URL to prevent re-triggering on refresh
+      router.replace('/', undefined);
+
       const job: Job = {
         id: `${Date.now()}-${updateUrl}`,
         url: updateUrl,
@@ -147,8 +150,6 @@ export default function ScraperPage() {
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
-      // Clean the URL to prevent re-triggering on refresh
-      router.replace('/', undefined);
     }
   }, [searchParams, runJob, router]);
 
