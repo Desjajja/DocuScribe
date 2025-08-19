@@ -39,7 +39,7 @@ export async function scrapeUrl(input: ScrapeUrlInput): Promise<ScrapeUrlOutput>
 const findRelevantLinks = ai.defineTool(
   {
     name: 'findRelevantLinks',
-    description: 'Scans a webpage\'s HTML to find all on-site links, filtering out duplicates, anchors, and external URLs.',
+    description: 'Scans a webpage\'s HTML to find all on-site links. It prioritizes links with "next" or "previous" text, and falls back to all on-site links if none are found.',
     inputSchema: z.object({
       baseUrl: z.string().url().describe('The base URL of the page where links were found, for resolving relative paths and ensuring links are on-site.'),
       htmlContent: z.string().describe('The full HTML content of the page to parse for links.'),
@@ -50,28 +50,53 @@ const findRelevantLinks = ai.defineTool(
     const $ = cheerio.load(htmlContent);
     const url = new URL(baseUrl);
     const uniqueLinks = new Set<string>();
-
-    $('a').each((_, el) => {
-      const href = $(el).attr('href');
-      if (!href) return;
-
-      try {
-        const fullUrl = new URL(href, url.origin);
-        fullUrl.hash = ''; // Remove fragment identifiers
-
-        // Filter out irrelevant links
-        const isSamePage = fullUrl.href === baseUrl;
-        const isExternal = fullUrl.origin !== url.origin;
-        const isAsset = /\.(pdf|zip|jpg|png|gif|css|js)$/i.test(fullUrl.pathname);
+    
+    const nextPatterns = /下一封|下页|下一页|下一章|后一页|下一张|next|more|newer|лог|›|→|»|≫|>>/i;
+    const prevPatterns = /上一封|上页|上一页|上一章|前一页|上一张|prev|previous|back|older|<|‹|←|«|≪|<</i;
+    const navigationPatterns = new RegExp(`${nextPatterns.source}|${prevPatterns.source}`, 'i');
+    
+    let prioritizedLinks: string[] = [];
+    
+    const allLinks = $('a').map((_, el) => {
+        const href = $(el).attr('href');
+        if (!href) return null;
         
-        if (isSamePage || isExternal || isAsset) return;
+        try {
+            const fullUrl = new URL(href, url.origin);
+            fullUrl.hash = ''; // Remove fragment identifiers
 
-        uniqueLinks.add(fullUrl.href);
-      } catch (e) {
-        // Ignore invalid URLs
+            const isSamePage = fullUrl.href === baseUrl;
+            const isExternal = fullUrl.origin !== url.origin;
+            const isAsset = /\.(pdf|zip|jpg|png|gif|css|js)$/i.test(fullUrl.pathname);
+            
+            if (isSamePage || isExternal || isAsset) return null;
+
+            return {
+              url: fullUrl.href,
+              text: $(el).text().trim(),
+            };
+        } catch (e) {
+            return null; // Ignore invalid URLs
+        }
+    }).get().filter(Boolean) as { url: string; text: string }[];
+
+    // First pass: find navigation links
+    for (const link of allLinks) {
+      if (navigationPatterns.test(link.text)) {
+        prioritizedLinks.push(link.url);
       }
-    });
+    }
 
+    // If we found some, return only those (deduplicated)
+    if (prioritizedLinks.length > 0) {
+      return Array.from(new Set(prioritizedLinks));
+    }
+    
+    // Fallback: if no navigation links, return all valid links (deduplicated)
+    for (const link of allLinks) {
+        uniqueLinks.add(link.url);
+    }
+    
     return Array.from(uniqueLinks);
   }
 );
@@ -194,10 +219,25 @@ const scrapeUrlFlow = ai.defineFlow(
     
     let compilationTitle = 'Documentation Compilation';
     try {
-      const path = new URL(startUrl).pathname;
-      const segments = path.split('/').filter(s => s && s.toLowerCase() !== 'docs');
-      if (segments.length > 0) {
-        compilationTitle = segments[segments.length - 1];
+      const url = new URL(startUrl);
+      const pathSegments = url.pathname.split('/').filter(s => s);
+      const hostSegments = url.hostname.split('.').filter(s => s !== 'www');
+      
+      // Prefer the last path segment if it's not a generic name
+      const lastPathSegment = pathSegments[pathSegments.length - 1];
+      if (lastPathSegment && !/^(docs|documentation|index|home)$/i.test(lastPathSegment)) {
+          compilationTitle = lastPathSegment;
+      } 
+      // Fallback to the second to last host segment (e.g., 'react' from 'react.dev')
+      else if (hostSegments.length > 1) {
+          compilationTitle = hostSegments[hostSegments.length - 2];
+      }
+       // Further fallback to the first significant path segment
+      else if (pathSegments.length > 0) {
+        compilationTitle = pathSegments[0];
+      }
+      else {
+          compilationTitle = hostSegments.join(' ');
       }
     } catch (e) {
       // Use default title on parsing error
