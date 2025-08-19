@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,12 +33,31 @@ type Job = {
   message: string;
   result?: Document;
   error?: string;
+  isUpdate: boolean;
+  updateId?: number;
 };
 
 export default function ScraperPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
   const [maxPages, setMaxPages] = useState('5');
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
+  const [updateMaxPages, setUpdateMaxPages] = useState('5');
+  const [documents, setDocuments] = useState<Document[]>([]);
+
+  // Load documents from localStorage to check for collisions
+  useEffect(() => {
+    try {
+      const storedDocsString = localStorage.getItem('scrapedDocuments');
+      if (storedDocsString) {
+        setDocuments(JSON.parse(storedDocsString));
+      }
+    } catch (error) {
+      console.error("Failed to load documents from localStorage", error);
+    }
+  }, []);
 
   const updateJob = useCallback((id: string, updates: Partial<Job>) => {
     setJobs(prevJobs =>
@@ -67,8 +88,7 @@ export default function ScraperPage() {
       const hashtagResult = await generateHashtags({ content: contentSample, url: compilation.url });
 
       // Step 3: Storing the document
-      const newDoc: Document = {
-        id: Date.now(),
+      const docData = {
         url: compilation.url,
         title: compilation.title,
         content: compilation.content,
@@ -80,15 +100,25 @@ export default function ScraperPage() {
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
       const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
-      const updatedDocs = [newDoc, ...storedDocs];
+      let updatedDocs: Document[];
+      let finalDoc: Document;
+
+      if (job.isUpdate && job.updateId) {
+        finalDoc = { ...docData, id: job.updateId };
+        updatedDocs = storedDocs.map(d => d.id === job.updateId ? finalDoc : d);
+      } else {
+        finalDoc = { ...docData, id: Date.now() };
+        updatedDocs = [finalDoc, ...storedDocs];
+      }
+      
       localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
-      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('storage')); // Notify other tabs/pages
 
       updateJob(job.id, { 
         status: 'complete', 
         progress: 100, 
-        message: 'Compilation complete!',
-        result: newDoc 
+        message: job.isUpdate ? 'Update complete!' : 'Compilation complete!',
+        result: finalDoc
       });
 
     } catch (error) {
@@ -98,12 +128,37 @@ export default function ScraperPage() {
     }
   }, [updateJob]);
 
+  // Effect to handle updates triggered from the library page via URL params
+  useEffect(() => {
+    const updateUrl = searchParams.get('updateUrl');
+    const updateId = searchParams.get('updateId');
+    const maxPagesParam = searchParams.get('maxPages');
+
+    if (updateUrl && updateId && maxPagesParam) {
+      const job: Job = {
+        id: `${Date.now()}-${updateUrl}`,
+        url: updateUrl,
+        maxPages: parseInt(maxPagesParam, 10),
+        status: 'scraping',
+        progress: 0,
+        message: 'Initializing update...',
+        isUpdate: true,
+        updateId: parseInt(updateId, 10),
+      };
+      setJobs(prev => [job, ...prev]);
+      runJob(job);
+      // Clean the URL to prevent re-triggering on refresh
+      router.replace('/', undefined);
+    }
+  }, [searchParams, runJob, router]);
+
+
   useEffect(() => {
     const completedJob = jobs.find(job => job.status === 'complete' && job.result);
     if (completedJob && completedJob.result) {
       toast({
-        title: "Compilation Complete",
-        description: `Successfully scraped "${completedJob.result.title}". Check your library.`,
+        title: completedJob.isUpdate ? "Update Complete" : "Compilation Complete",
+        description: `Successfully processed "${completedJob.result.title}". Check your library.`,
       });
     }
 
@@ -117,26 +172,56 @@ export default function ScraperPage() {
     }
   }, [jobs]);
 
+  const handleScrapeRequest = (url: string, maxPages: number, isUpdate: boolean, updateId?: number) => {
+    const newJob: Job = {
+      id: `${Date.now()}-${url}`,
+      url,
+      maxPages,
+      status: 'scraping',
+      progress: 0,
+      message: 'Initializing...',
+      isUpdate,
+      updateId,
+    };
+    setJobs(prevJobs => [newJob, ...prevJobs]);
+    runJob(newJob);
+  };
+  
+  const handleConfirmUpdate = () => {
+    if (!docToUpdate) return;
+    const maxPagesNum = parseInt(updateMaxPages, 10);
+     if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
+      toast({
+        title: "Invalid Number",
+        description: "Please enter a number between 1 and 50.",
+        variant: "destructive",
+      });
+      return;
+    }
+    handleScrapeRequest(docToUpdate.url, maxPagesNum, true, docToUpdate.id);
+    setDocToUpdate(null);
+    setUrl('');
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) {
-      toast({
-        title: "Error",
-        description: "Please enter a URL to scrape.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please enter a URL to scrape.", variant: "destructive" });
       return;
     }
 
     try {
       new URL(url);
     } catch (_) {
-      toast({
-        title: "Invalid URL",
-        description: "Please enter a valid URL.",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid URL", description: "Please enter a valid URL.", variant: "destructive" });
+      return;
+    }
+    
+    // Collision detection
+    const existingDoc = documents.find(doc => doc.url === url);
+    if (existingDoc) {
+      setDocToUpdate(existingDoc);
       return;
     }
 
@@ -150,20 +235,8 @@ export default function ScraperPage() {
       return;
     }
 
-    const newJob: Job = {
-      id: `${Date.now()}-${url}`,
-      url,
-      maxPages: maxPagesNum,
-      status: 'scraping',
-      progress: 0,
-      message: 'Initializing...',
-    };
-
-    setJobs(prevJobs => [newJob, ...prevJobs]);
+    handleScrapeRequest(url, maxPagesNum, false);
     setUrl('');
-
-    // Run the job asynchronously
-    runJob(newJob);
   };
   
   const isScraping = jobs.some(job => job.status === 'scraping' || job.status === 'generating_hashtags');
@@ -261,6 +334,34 @@ export default function ScraperPage() {
             </div>
         </div>
       )}
+      
+       <Dialog open={!!docToUpdate} onOpenChange={(isOpen) => !isOpen && setDocToUpdate(null)}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Update Existing Document</DialogTitle>
+                <DialogDescription>
+                  A document with this URL already exists. Would you like to update it? Please specify the maximum number of pages to re-scrape.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+               <div className="space-y-2">
+                  <Label htmlFor="updateMaxPages">Maximum Pages</Label>
+                  <Input
+                    id="updateMaxPages"
+                    type="number"
+                    value={updateMaxPages}
+                    onChange={(e) => setUpdateMaxPages(e.target.value)}
+                    min="1"
+                    max="50"
+                  />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setDocToUpdate(null)}>Cancel</Button>
+                <Button onClick={handleConfirmUpdate}>Update Document</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

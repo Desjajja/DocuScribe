@@ -8,14 +8,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from "@/components/ui/input";
+import { Label } from '@/components/ui/label';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, MoreVertical, Edit, Trash2, Download } from 'lucide-react';
+import { Search, MoreVertical, Edit, Trash2, Download, RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { format, isValid } from 'date-fns';
+import { useRouter } from 'next/navigation';
 
 
 type Document = {
@@ -49,12 +51,15 @@ const initialDocuments: Document[] = [
 ];
 
 export default function LibraryPage() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
+  const [updateMaxPages, setUpdateMaxPages] = useState('5');
 
   const loadDocuments = () => {
     try {
@@ -114,6 +119,32 @@ export default function LibraryPage() {
     setDocuments(updatedDocs);
     localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
     toast({ title: "Document Deleted", description: "The document has been removed from your library." });
+  };
+  
+  const handleUpdate = (doc: Document) => {
+    setDocToUpdate(doc);
+  };
+
+  const handleConfirmUpdate = () => {
+    if (!docToUpdate) return;
+    const maxPagesNum = parseInt(updateMaxPages, 10);
+    if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
+      toast({
+        title: "Invalid Number",
+        description: "Please enter a number between 1 and 50 for the maximum pages.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Pass update info to scraper page via query params
+    const query = new URLSearchParams({
+      updateUrl: docToUpdate.url,
+      updateId: docToUpdate.id.toString(),
+      maxPages: maxPagesNum.toString(),
+    });
+    
+    router.push(`/?${query.toString()}`);
   };
 
   const handleExportMarkdown = (doc: Document) => {
@@ -246,6 +277,10 @@ export default function LibraryPage() {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleUpdate(doc)}>
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                <span>Update</span>
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleExportMarkdown(doc)}>
                                 <Download className="mr-2 h-4 w-4" />
                                 <span>Export as Markdown</span>
@@ -322,8 +357,34 @@ export default function LibraryPage() {
             </DialogClose>
         </DialogContent>
       </Dialog>
+      
+      <Dialog open={!!docToUpdate} onOpenChange={(isOpen) => !isOpen && setDocToUpdate(null)}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Update Document</DialogTitle>
+                <DialogDescription>
+                  Re-scrape the content for "{docToUpdate?.title}". Please specify the maximum number of pages to crawl for the update.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+               <div className="space-y-2">
+                  <Label htmlFor="updateMaxPages">Maximum Pages</Label>
+                  <Input
+                    id="updateMaxPages"
+                    type="number"
+                    value={updateMaxPages}
+                    onChange={(e) => setUpdateMaxPages(e.target.value)}
+                    min="1"
+                    max="50"
+                  />
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setDocToUpdate(null)}>Cancel</Button>
+                <Button onClick={handleConfirmUpdate}>Start Update</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-    
