@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -46,6 +46,9 @@ export default function ScraperPage() {
   const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
   const [updateMaxPages, setUpdateMaxPages] = useState('5');
   const [documents, setDocuments] = useState<Document[]>([]);
+  
+  // Use a ref to act as a lock, preventing the useEffect from firing twice on the same navigation
+  const processedUrlParams = useRef(false);
 
   // Load documents from localStorage to check for collisions
   useEffect(() => {
@@ -134,12 +137,12 @@ export default function ScraperPage() {
     const updateId = searchParams.get('updateId');
     const maxPagesParam = searchParams.get('maxPages');
 
-    if (updateUrl && updateId && maxPagesParam) {
-      // Clean the URL to prevent re-triggering on refresh
-      router.replace('/', undefined);
+    if (updateUrl && updateId && maxPagesParam && !processedUrlParams.current) {
+      // Engage the lock to prevent re-processing
+      processedUrlParams.current = true;
 
       const job: Job = {
-        id: `${Date.now()}-${updateUrl}`,
+        id: `${Date.now()}-${Math.random()}-${updateUrl}`,
         url: updateUrl,
         maxPages: parseInt(maxPagesParam, 10),
         status: 'scraping',
@@ -150,7 +153,16 @@ export default function ScraperPage() {
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
+      
+      // Clean the URL to prevent re-triggering on refresh/re-render
+      router.replace('/', undefined);
     }
+    
+    // Reset the lock if the search params are cleared
+    if (!updateUrl && !updateId && !maxPagesParam) {
+        processedUrlParams.current = false;
+    }
+    
   }, [searchParams, runJob, router]);
 
 
@@ -175,7 +187,7 @@ export default function ScraperPage() {
 
   const handleScrapeRequest = (url: string, maxPages: number, isUpdate: boolean, updateId?: number) => {
     const newJob: Job = {
-      id: `${Date.now()}-${url}`,
+      id: `${Date.now()}-${Math.random()}-${url}`,
       url,
       maxPages,
       status: 'scraping',
