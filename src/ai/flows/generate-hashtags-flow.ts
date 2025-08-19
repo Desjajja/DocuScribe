@@ -29,8 +29,10 @@ const prompt = ai.definePrompt({
   input: { schema: GenerateHashtagsInputSchema },
   output: { schema: GenerateHashtagsOutputSchema },
   prompt: `You are an expert in summarizing and tagging content.
-  Analyze the following document content and generate a list of 3-5 relevant hashtags.
+  Analyze the following document content and generate a list of 2-3 relevant hashtags.
+  The first hashtag should be the primary technology or topic. The subsequent hashtags should be broader categories or fields.
   The hashtags should be concise, relevant to the main topics, and should not include the '#' symbol.
+  For example, if the content is about React Hooks, a good output would be: ["react", "frontend", "javascript"].
 
   Document Content:
   {{{content}}}

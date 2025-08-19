@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
@@ -24,7 +23,6 @@ type Document = {
 export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [maxPages, setMaxPages] = useState('5');
-  const [scrapingMode, setScrapingMode] = useState<'aggregate' | 'separate'>('separate');
   const [isScraping, setIsScraping] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,44 +60,52 @@ export default function ScraperPage() {
     setIsScraping(true);
     toast({
       title: "Scraping Initiated",
-      description: `Scraping ${url}... This may take a moment.`,
+      description: `Building compilation for ${url}... This may take a moment.`,
     });
 
     try {
+      // The scrapeUrl flow now always aggregates content.
       const results = await scrapeUrl({
         startUrl: url,
         maxPages: maxPagesNum,
-        mode: scrapingMode,
       });
+
+      if (results.length === 0) {
+        toast({
+          title: "Scraping Complete",
+          description: `Could not find any content at the specified URL.`,
+        });
+        return;
+      }
+      
+      const compilation = results[0];
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
       const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
 
-      const newDocs: Document[] = await Promise.all(results.map(async (result, i) => {
-        // Limit content sent for hashtag generation to avoid being too verbose
-        const contentSample = result.content.substring(0, 2000);
-        const hashtagResult = await generateHashtags({ content: contentSample });
-        return {
-          id: Date.now() + i,
-          url: result.url,
-          title: result.title,
-          content: result.content,
-          image: 'https://placehold.co/600x400.png',
-          aiHint: 'web document',
-          hashtags: hashtagResult.hashtags,
-        };
-      }));
+      // Generate hashtags from the aggregated content.
+      const contentSample = compilation.content.substring(0, 4000);
+      const hashtagResult = await generateHashtags({ content: contentSample });
 
-      const updatedDocs = [...newDocs, ...storedDocs];
+      const newDoc: Document = {
+        id: Date.now(),
+        url: compilation.url,
+        title: compilation.title,
+        content: compilation.content,
+        image: 'https://placehold.co/600x400.png',
+        aiHint: 'web document compilation',
+        hashtags: hashtagResult.hashtags,
+      };
+
+      const updatedDocs = [newDoc, ...storedDocs];
       localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
       
-      // This is a workaround to notify the library page of the change
-      // because the 'storage' event doesn't fire for the same page that made the change.
+      // Notify the library page of the change.
       window.dispatchEvent(new Event('storage'));
 
       toast({
-        title: "Scraping Complete",
-        description: `Successfully processed ${results.length} page(s). Check your library.`,
+        title: "Compilation Complete",
+        description: `Successfully created a new compilation. Check your library.`,
       });
       setUrl('');
     } catch (error) {
@@ -124,7 +130,7 @@ export default function ScraperPage() {
               AI Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and choose how to scrape the content. The scraper will follow on-site links.
+              Enter a starting URL to create a documentation compilation. The scraper will follow on-site links.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -139,42 +145,18 @@ export default function ScraperPage() {
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="maxPages">Maximum Pages</Label>
-                <Input
-                  id="maxPages"
-                  type="number"
-                  placeholder="5"
-                  value={maxPages}
-                  onChange={(e) => setMaxPages(e.target.value)}
-                  min="1"
-                  max="50"
-                  required
-                />
-              </div>
-            </div>
-             <div className="space-y-3">
-               <Label>Scraping Mode</Label>
-               <RadioGroup value={scrapingMode} onValueChange={(value) => setScrapingMode(value as 'aggregate' | 'separate')} className="flex gap-4">
-                  <div>
-                    <RadioGroupItem value="separate" id="separate" className="peer sr-only" />
-                    <Label htmlFor="separate" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
-                      Separate Docs
-                    </Label>
-                  </div>
-                   <div>
-                    <RadioGroupItem value="aggregate" id="aggregate" className="peer sr-only" />
-                    <Label htmlFor="aggregate" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
-                      Aggregate Doc
-                    </Label>
-                  </div>
-               </RadioGroup>
-                <p className="text-sm text-muted-foreground">
-                    {scrapingMode === 'separate' 
-                        ? "Create a separate library document for each page found." 
-                        : "Combine content from all found pages into a single document."}
-                </p>
+            <div className="space-y-2">
+              <Label htmlFor="maxPages">Maximum Pages</Label>
+              <Input
+                id="maxPages"
+                type="number"
+                placeholder="5"
+                value={maxPages}
+                onChange={(e) => setMaxPages(e.target.value)}
+                min="1"
+                max="50"
+                required
+              />
             </div>
           </CardContent>
           <CardFooter>
@@ -182,7 +164,7 @@ export default function ScraperPage() {
               {isScraping ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Scraping...
+                  Building Compilation...
                 </>
               ) : (
                 'Start Scraping'

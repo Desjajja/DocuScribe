@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview A flow to recursively scrape a website from a starting URL.
+ * @fileOverview A flow to recursively scrape a website from a starting URL and compile the content.
  *
  * - scrapeUrl - The main function to initiate the scraping process.
  * - ScrapeUrlInput - Input type for the scrapeUrl function.
@@ -15,7 +15,6 @@ import * as cheerio from 'cheerio';
 const ScrapeUrlInputSchema = z.object({
   startUrl: z.string().url().describe('The initial URL to start scraping from.'),
   maxPages: z.number().int().min(1).max(50).describe('The maximum number of pages to crawl.'),
-  mode: z.enum(['aggregate', 'separate']).describe('Determines whether to aggregate content into one document or create separate documents.'),
 });
 export type ScrapeUrlInput = z.infer<typeof ScrapeUrlInputSchema>;
 
@@ -106,7 +105,7 @@ const scrapeUrlFlow = ai.defineFlow(
     inputSchema: ScrapeUrlInputSchema,
     outputSchema: ScrapeUrlOutputSchema,
   },
-  async ({ startUrl, maxPages, mode }) => {
+  async ({ startUrl, maxPages }) => {
     const visitedUrls = new Set<string>();
     const urlQueue: string[] = [startUrl];
     const results: ScrapedPage[] = [];
@@ -135,21 +134,18 @@ const scrapeUrlFlow = ai.defineFlow(
       }
     }
 
-    if (mode === 'aggregate') {
-      const mainDoc = results[0];
-      if (!mainDoc) return [];
+    const mainDoc = results[0];
+    if (!mainDoc) return [];
 
-      const aggregatedContent = results
-        .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
-        .join('\n\n---\n\n');
-      
-      return [{
-        url: startUrl,
-        title: `${mainDoc.title} (Aggregated)`,
-        content: aggregatedContent,
-      }];
-    }
+    const aggregatedContent = results
+      .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
+      .join('\n\n---\n\n');
     
-    return results;
+    // Always return a single, aggregated document
+    return [{
+      url: startUrl,
+      title: `${mainDoc.title} (Compilation)`,
+      content: aggregatedContent,
+    }];
   }
 );
