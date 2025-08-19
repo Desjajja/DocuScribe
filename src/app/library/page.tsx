@@ -4,12 +4,13 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, MoreVertical, Edit, Trash2 } from 'lucide-react';
+import { Search, MoreVertical, Edit, Trash2, Download } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
 
@@ -23,6 +24,12 @@ type Document = {
   hashtags: string[];
 };
 
+type ParsedSection = {
+  title: string;
+  url: string;
+  content: string;
+};
+
 const initialDocuments: Document[] = [
   {
     id: 1,
@@ -30,7 +37,7 @@ const initialDocuments: Document[] = [
     url: 'https://react.dev/learn',
     image: 'https://placehold.co/600x400.png',
     aiHint: 'code react',
-    content: 'This is an example document. Scrape a website to add real content to your library.',
+    content: '## Getting Started\n\nURL: https://react.dev/learn\n\nThis is an example document. Scrape a website to add real content to your library.',
     hashtags: ['react', 'javascript', 'frontend']
   },
 ];
@@ -42,7 +49,6 @@ export default function LibraryPage() {
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
-
 
   const loadDocuments = () => {
     try {
@@ -103,12 +109,47 @@ export default function LibraryPage() {
     localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
     toast({ title: "Document Deleted", description: "The document has been removed from your library." });
   };
+
+  const handleExportMarkdown = (doc: Document) => {
+    // Sanitize title for filename
+    const filename = `${doc.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
+    const blob = new Blob([doc.content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported to Markdown", description: `Downloaded as ${filename}` });
+  };
+
+  const parseContentToSections = (content: string): ParsedSection[] => {
+    const sections = content.split('\n\n---\n\n');
+    return sections.map(sectionText => {
+      const lines = sectionText.split('\n');
+      const titleMatch = lines[0]?.match(/^## (.*)/);
+      const title = titleMatch ? titleMatch[1] : 'Content';
+      const urlMatch = lines[1]?.match(/^URL: (.*)/);
+      const url = urlMatch ? urlMatch[1] : '';
+      const sectionContent = lines.slice(3).join('\n');
+      return { title, url, content: sectionContent };
+    });
+  };
   
   useEffect(() => {
     if (editingDoc) {
       setTimeout(() => renameInputRef.current?.focus(), 100);
     }
   }, [editingDoc]);
+  
+  const selectedDocSections = useMemo(() => {
+    if (selectedDoc) {
+      return parseContentToSections(selectedDoc.content);
+    }
+    return [];
+  }, [selectedDoc]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -153,7 +194,16 @@ export default function LibraryPage() {
                         </DialogDescription>
                       </DialogHeader>
                       <ScrollArea className="flex-grow pr-6 -mr-6">
-                        <p className="text-sm whitespace-pre-wrap">{selectedDoc.content}</p>
+                        <Accordion type="single" collapsible className="w-full" defaultValue="item-0">
+                          {selectedDocSections.map((section, index) => (
+                             <AccordionItem value={`item-${index}`} key={index}>
+                                <AccordionTrigger><b>{section.title}</b></AccordionTrigger>
+                                <AccordionContent>
+                                    <p className="text-sm whitespace-pre-wrap">{section.content}</p>
+                                </AccordionContent>
+                             </AccordionItem>
+                          ))}
+                        </Accordion>
                       </ScrollArea>
                     </DialogContent>
                   )}
@@ -166,13 +216,18 @@ export default function LibraryPage() {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleExportMarkdown(doc)}>
+                                <Download className="mr-2 h-4 w-4" />
+                                <span>Export as Markdown</span>
+                            </DropdownMenuItem>
+                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleRename(doc)}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 <span>Rename</span>
                             </DropdownMenuItem>
                              <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive focus:text-destructive">
                                         <Trash2 className="mr-2 h-4 w-4" />
                                         <span>Delete</span>
                                     </DropdownMenuItem>
@@ -186,7 +241,7 @@ export default function LibraryPage() {
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
                                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDelete(doc.id)}>Delete</AlertDialogAction>
+                                        <AlertDialogAction onClick={() => handleDelete(doc.id)} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
@@ -236,3 +291,5 @@ export default function LibraryPage() {
     </div>
   );
 }
+
+    
