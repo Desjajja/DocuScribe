@@ -229,32 +229,34 @@ export default function ScraperPage() {
       </Card>
 
       {jobs.length > 0 && (
-        <div className="w-full max-w-lg mx-auto space-y-4">
-            <div className="flex justify-between items-center">
+        <div className="w-full max-w-lg mx-auto">
+            <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold tracking-tight">Scraping Tasks</h2>
                 <Button variant="outline" size="sm" onClick={handleClearHistory}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Clear History
                 </Button>
             </div>
-            {jobs.map((job) => (
-              <Card key={job.id}>
-                <CardHeader className="pb-2">
-                   <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-base font-medium truncate" title={job.url}>{job.url}</CardTitle>
-                        <CardDescription className="text-xs pt-1">{job.message}</CardDescription>
-                      </div>
-                       {job.status === 'complete' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                       {job.status === 'failed' && <XCircle className="w-5 h-5 text-destructive" />}
-                       {(job.status === 'scraping' || job.status === 'generating_hashtags') && <Loader2 className="w-5 h-5 animate-spin" />}
-                   </div>
-                </CardHeader>
-                <CardContent>
-                   <Progress value={job.progress} className="w-full h-2" />
-                </CardContent>
-              </Card>
-            ))}
+            <div className="space-y-2">
+              {jobs.map((job) => (
+                <Card key={job.id}>
+                  <CardHeader className="pb-2">
+                     <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-base font-medium truncate" title={job.url}>{job.url}</CardTitle>
+                          <CardDescription className="text-xs pt-1">{job.message}</CardDescription>
+                        </div>
+                         {job.status === 'complete' && <CheckCircle className="w-5 h-5 text-green-500" />}
+                         {job.status === 'failed' && <XCircle className="w-5 h-5 text-destructive" />}
+                         {(job.status === 'scraping' || job.status === 'generating_hashtags') && <Loader2 className="w-5 h-5 animate-spin" />}
+                     </div>
+                  </CardHeader>
+                  <CardContent>
+                     <Progress value={job.progress} className="w-full h-2" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
         </div>
       )}
     </div>
