@@ -14,7 +14,8 @@ import * as cheerio from 'cheerio';
 // Define input and output schemas
 const ScrapeUrlInputSchema = z.object({
   startUrl: z.string().url().describe('The initial URL to start scraping from.'),
-  maxPages: z.number().int().min(1).max(10).describe('The maximum number of pages to scrape.'),
+  maxPages: z.number().int().min(1).max(10).describe('The maximum number of pages to process.'),
+  mode: z.enum(['aggregate', 'separate']).describe('Determines whether to aggregate content into one document or create separate documents.'),
 });
 export type ScrapeUrlInput = z.infer<typeof ScrapeUrlInputSchema>;
 
@@ -40,41 +41,58 @@ const findRelevantLinks = ai.defineTool(
     description: 'Analyzes a list of links from a webpage to identify the most relevant ones to scrape next, based on context like "next", "previous", or related topics. It prioritizes documentation-style navigation.',
     inputSchema: z.object({
       baseUrl: z.string().url().describe('The base URL of the page where links were found, for resolving relative paths.'),
-      links: z.array(z.string()).describe('An array of all anchor tags (<a>) href attributes found on the page.'),
+      links: z.array(z.object({
+        href: z.string().describe('The href attribute of the link.'),
+        text: z.string().describe('The anchor text of the link.'),
+      })).describe('An array of all anchor tags (<a>) found on the page, with their href and text.'),
     }),
-    outputSchema: z.array(z.string().url()).describe('An array of absolute URLs that are most relevant to scrape next.'),
+    outputSchema: z.array(z.object({
+      url: z.string().url().describe('An absolute URL that is relevant to scrape next.'),
+      title: z.string().describe('The title/text of the link.'),
+      isSequential: z.boolean().describe('Whether the link is for sequential navigation (e.g., "next", "previous").'),
+    })),
   },
   async ({ baseUrl, links }) => {
-    // This is a simplified implementation. A real-world scenario would use an LLM call here.
-    // For now, it filters, de-duplicates, and resolves links.
+    // This is a simplified implementation. A real-world scenario could use an LLM call here for more intelligence.
+    // For now, it filters, de-duplicates, and resolves links based on keywords.
     const url = new URL(baseUrl);
-    const uniqueLinks = [...new Set(links)];
+    const uniqueLinks = new Map<string, {text: string; isSequential: boolean}>();
 
-    return uniqueLinks
-      .map(link => {
-        try {
-          // Create a full URL from the href
-          return new URL(link, url.origin).href;
-        } catch (e) {
-          return null;
-        }
-      })
-      .filter((link): link is string => {
-        if (!link) return false;
-        // Filter out irrelevant links
-        const lowerLink = link.toLowerCase();
-        const isSamePage = link === baseUrl;
-        const isAnchor = link.startsWith('#');
-        const isExternal = !link.startsWith(url.origin);
-        const isNavKeyword = /next|prev|guide|docs|tutorial|getting-started|api|reference/.test(lowerLink);
+    for (const link of links) {
+      if (!link.href) continue;
+
+      try {
+        const fullUrl = new URL(link.href, url.origin).href;
         
-        return !isSamePage && !isAnchor && !isExternal && isNavKeyword;
-      });
+        // Filter out irrelevant links
+        const lowerLink = link.href.toLowerCase();
+        const lowerText = link.text.toLowerCase();
+        
+        const isSamePage = fullUrl === baseUrl;
+        const isAnchor = link.href.startsWith('#');
+        const isExternal = !fullUrl.startsWith(url.origin);
+        
+        if (isSamePage || isAnchor || isExternal) continue;
+
+        const isNavKeyword = /next|prev|guide|docs|tutorial|getting-started|api|reference/.test(lowerLink);
+        const isSequentialKeyword = /next|previous|back|forward|continue|continue reading|上一页|下一页/.test(lowerText);
+        
+        if (isNavKeyword || isSequentialKeyword) {
+          if (!uniqueLinks.has(fullUrl)) {
+             uniqueLinks.set(fullUrl, { text: link.text.trim() || 'Untitled Link', isSequential: isSequentialKeyword });
+          }
+        }
+      } catch (e) {
+        // Ignore invalid URLs
+      }
+    }
+
+    return Array.from(uniqueLinks.entries()).map(([url, data]) => ({ url, title: data.text, isSequential: data.isSequential }));
   }
 );
 
 // Helper function to fetch and parse a single URL
-async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; links: string[] }> {
+async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; links: { href: string; text: string }[] }> {
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!response.ok) {
@@ -84,18 +102,21 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
     const $ = cheerio.load(html);
 
     // Remove non-content elements
-    $('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"]').remove();
+    $('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], form, aside').remove();
 
     const title = $('title').first().text() || $('h1').first().text();
     // Extract text, normalize whitespace, and remove excessive blank lines
     const content = $('body').text().replace(/\s\s+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 
-    const links = $('a').map((_, el) => $(el).attr('href')).get().filter(Boolean);
+    const links = $('a').map((_, el) => ({
+      href: $(el).attr('href') || '',
+      text: $(el).text() || ''
+    })).get();
 
     return { title, content, links };
   } catch (error) {
     console.error(`Error processing ${url}:`, error);
-    return { title: `Error: ${url}`, content: 'Failed to retrieve content.', links: [] };
+    return { title: `Error: ${url}`, content: `Failed to retrieve content for ${url}.`, links: [] };
   }
 }
 
@@ -106,35 +127,48 @@ const scrapeUrlFlow = ai.defineFlow(
     inputSchema: ScrapeUrlInputSchema,
     outputSchema: ScrapeUrlOutputSchema,
   },
-  async ({ startUrl, maxPages }) => {
-    const visitedUrls = new Set<string>();
-    const pagesToScrape: string[] = [startUrl];
-    const scrapedPages: ScrapedPage[] = [];
+  async ({ startUrl, maxPages, mode }) => {
+    const visitedUrls = new Set<string>([startUrl]);
+    
+    console.log(`Starting scrape for: ${startUrl} in ${mode} mode`);
+    const { title: startTitle, content: startContent, links: startLinks } = await fetchAndProcessUrl(startUrl);
 
-    while (scrapedPages.length < maxPages && pagesToScrape.length > 0) {
-      const currentUrl = pagesToScrape.shift()!;
-      if (visitedUrls.has(currentUrl)) {
-        continue;
-      }
-      visitedUrls.add(currentUrl);
+    let aggregatedContent = startContent;
+    const separatePages: ScrapedPage[] = [{ url: startUrl, title: startTitle, content: startContent }];
 
-      console.log(`Scraping: ${currentUrl}`);
-      const { title, content, links } = await fetchAndProcessUrl(currentUrl);
+    const relevantLinks = await findRelevantLinks({ baseUrl: startUrl, links: startLinks });
+    
+    let pagesProcessed = 1;
+    for (const link of relevantLinks) {
+      if (pagesProcessed >= maxPages) break;
+      if (visitedUrls.has(link.url)) continue;
+
+      visitedUrls.add(link.url);
+      pagesProcessed++;
       
-      scrapedPages.push({ url: currentUrl, title, content });
+      console.log(`Scraping sub-page: ${link.url}`);
+      const { title, content } = await fetchAndProcessUrl(link.url);
 
-      if (scrapedPages.length >= maxPages) break;
-
-      // Use the tool to find the next links to scrape
-      const relevantLinks = await findRelevantLinks({ baseUrl: currentUrl, links });
-
-      // Add new, unvisited links to the queue
-      for (const link of relevantLinks) {
-        if (!visitedUrls.has(link)) {
-          pagesToScrape.push(link);
+      if (mode === 'aggregate') {
+        if (!link.isSequential) {
+           aggregatedContent += `\n\n---\n## Content from: ${link.title}\n---\n\n`;
+        } else {
+           aggregatedContent += `\n\n---\n\n`;
         }
+        aggregatedContent += content;
+      } else { // separate mode
+        separatePages.push({ url: link.url, title, content });
       }
     }
-    return scrapedPages;
+
+    if (mode === 'aggregate') {
+      return [{
+        url: startUrl,
+        title: startTitle,
+        content: aggregatedContent,
+      }];
+    }
+    
+    return separatePages;
   }
 );

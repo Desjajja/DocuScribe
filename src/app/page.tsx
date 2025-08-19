@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe } from "lucide-react";
-import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
+import { scrapeUrl, ScrapeUrlOutput } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 
 type Document = {
@@ -24,6 +25,7 @@ type Document = {
 export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [pagesToScrape, setPagesToScrape] = useState('1');
+  const [scrapingMode, setScrapingMode] = useState<'aggregate' | 'separate'>('separate');
   const [isScraping, setIsScraping] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,13 +60,16 @@ export default function ScraperPage() {
       const results = await scrapeUrl({
         startUrl: url,
         maxPages: parseInt(pagesToScrape, 10),
+        mode: scrapingMode,
       });
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
       const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
 
       const newDocs: Document[] = await Promise.all(results.map(async (result, i) => {
-        const hashtagResult = await generateHashtags({ content: result.content.substring(0, 1000) });
+        // Limit content sent for hashtag generation to avoid being too verbose
+        const contentSample = result.content.substring(0, 2000);
+        const hashtagResult = await generateHashtags({ content: contentSample });
         return {
           id: Date.now() + i,
           url: result.url,
@@ -85,7 +90,7 @@ export default function ScraperPage() {
 
       toast({
         title: "Scraping Complete",
-        description: `Successfully scraped and saved ${results.length} page(s).`,
+        description: `Successfully processed ${results.length} page(s). Check your library.`,
       });
       setUrl('');
     } catch (error) {
@@ -110,10 +115,10 @@ export default function ScraperPage() {
               AI Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and select how many relevant pages to find and scrape.
+              Enter a URL and choose how to scrape the content.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="url">URL</Label>
               <Input
@@ -125,8 +130,30 @@ export default function ScraperPage() {
                 required
               />
             </div>
+            <div className="space-y-3">
+               <Label>Scraping Mode</Label>
+               <RadioGroup value={scrapingMode} onValueChange={(value) => setScrapingMode(value as 'aggregate' | 'separate')} className="flex gap-4">
+                  <div>
+                    <RadioGroupItem value="separate" id="separate" className="peer sr-only" />
+                    <Label htmlFor="separate" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
+                      Separate Docs
+                    </Label>
+                  </div>
+                   <div>
+                    <RadioGroupItem value="aggregate" id="aggregate" className="peer sr-only" />
+                    <Label htmlFor="aggregate" className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary">
+                      Aggregate Doc
+                    </Label>
+                  </div>
+               </RadioGroup>
+                <p className="text-sm text-muted-foreground">
+                    {scrapingMode === 'separate' 
+                        ? "Create a separate library document for each relevant page found." 
+                        : "Combine content from relevant sub-pages into a single document."}
+                </p>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="pages">Pages to Scrape</Label>
+              <Label htmlFor="pages">Max Pages to Scrape</Label>
               <Select value={pagesToScrape} onValueChange={setPagesToScrape}>
                 <SelectTrigger id="pages" className="w-full">
                   <SelectValue placeholder="Select number of pages" />
@@ -135,12 +162,12 @@ export default function ScraperPage() {
                   <SelectItem value="1">1 Page</SelectItem>
                   <SelectItem value="2">2 Pages</SelectItem>
                   <SelectItem value="3">3 Pages</SelectItem>
-                  <SelectItem value="4">4 Pages</SelectItem>
                   <SelectItem value="5">5 Pages</SelectItem>
+                  <SelectItem value="10">10 Pages</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                The AI will try to find and scrape this many relevant pages.
+                The AI will process up to this many relevant pages.
               </p>
             </div>
           </CardContent>
