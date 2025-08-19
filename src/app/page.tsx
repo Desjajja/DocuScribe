@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,51 @@ export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [levels, setLevels] = useState('1');
   const [jobs, setJobs] = useState<Job[]>([]);
+  const prevJobsRef = useRef<Job[]>([]);
+
+  // Update prevJobsRef whenever jobs changes
+  useEffect(() => {
+    prevJobsRef.current = jobs;
+  });
+
+  // Effect for showing toast on job completion
+  useEffect(() => {
+    const previouslyRunningJobs = prevJobsRef.current.filter(job => job.status === 'in-progress');
+    const currentlyCompletedJobs = jobs.filter(job => job.status === 'completed');
+
+    previouslyRunningJobs.forEach(prevJob => {
+      if (currentlyCompletedJobs.some(job => job.id === prevJob.id)) {
+        toast({
+          title: "Scraping Complete",
+          description: `Finished scraping ${prevJob.url}.`,
+        });
+
+        // Save the scraped data to localStorage
+        try {
+            const storedDocsString = localStorage.getItem('scrapedDocuments');
+            const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
+            const newDoc: Document = {
+                id: Date.now(),
+                url: prevJob.url,
+                title: `Scraped: ${prevJob.url.split('//')[1]?.split('/')[0] || prevJob.url}`,
+                snippet: `This is scraped content from ${prevJob.url} with a depth of ${prevJob.levels}. The content is simulated as pure text.`,
+                image: 'https://placehold.co/600x400.png',
+                aiHint: 'web document'
+            };
+            const updatedDocs = [newDoc, ...storedDocs];
+            localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+        } catch (error) {
+            console.error("Failed to save to localStorage", error);
+             toast({
+              title: "Storage Error",
+              description: "Could not save scraped document.",
+              variant: "destructive"
+            });
+        }
+      }
+    });
+  }, [jobs]);
+
 
   useEffect(() => {
     const activeJob = jobs.find(job => job.status === 'in-progress');
@@ -45,29 +90,6 @@ export default function ScraperPage() {
             if (j.id === activeJob.id && j.progress < 100) {
               const newProgress = j.progress + 10;
               if (newProgress >= 100) {
-                toast({
-                  title: "Scraping Complete",
-                  description: `Finished scraping ${j.url}.`,
-                });
-                
-                // Save the scraped data to localStorage
-                try {
-                    const storedDocsString = localStorage.getItem('scrapedDocuments');
-                    const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
-                    const newDoc: Document = {
-                        id: Date.now(),
-                        url: j.url,
-                        title: `Scraped: ${j.url.split('//')[1]?.split('/')[0] || j.url}`,
-                        snippet: `This is scraped content from ${j.url} with a depth of ${j.levels}. The content is simulated as pure text.`,
-                        image: 'https://placehold.co/600x400.png',
-                        aiHint: 'web document'
-                    };
-                    const updatedDocs = [newDoc, ...storedDocs];
-                    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
-                } catch (error) {
-                    console.error("Failed to save to localStorage", error);
-                }
-
                 return { ...j, progress: 100, status: 'completed' };
               }
               return { ...j, progress: newProgress };
