@@ -134,17 +134,27 @@ const scrapeUrlFlow = ai.defineFlow(
       }
     }
 
-    const mainDoc = results[0];
-    if (!mainDoc) return [];
+    if (results.length === 0) return [];
 
     const aggregatedContent = results
       .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
       .join('\n\n---\n\n');
     
+    let compilationTitle = 'Documentation Compilation';
+    try {
+      const path = new URL(startUrl).pathname;
+      const segments = path.split('/').filter(s => s);
+      if (segments.length > 0) {
+        compilationTitle = segments[segments.length - 1];
+      }
+    } catch (e) {
+      // Use default title on parsing error
+    }
+    
     // Always return a single, aggregated document
     return [{
       url: startUrl,
-      title: `${mainDoc.title} (Compilation)`,
+      title: compilationTitle,
       content: aggregatedContent,
     }];
   }
