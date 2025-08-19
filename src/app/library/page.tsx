@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Search } from 'lucide-react';
 import Image from 'next/image';
 
-const mockDocuments = [
+type Document = {
+  id: number;
+  title: string;
+  url: string;
+  snippet: string;
+  image: string;
+  aiHint: string;
+};
+
+const initialDocuments: Document[] = [
   {
     id: 1,
     title: 'Getting Started with React',
@@ -31,42 +40,37 @@ const mockDocuments = [
     image: 'https://placehold.co/600x400.png',
     aiHint: 'design css'
   },
-  {
-    id: 4,
-    title: 'ShadCN UI Components',
-    url: 'https://ui.shadcn.com/docs',
-    snippet: 'Beautifully designed components that you can copy and paste into your apps. Accessible. Customizable. Open Source.',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'ui components'
-  },
-    {
-    id: 5,
-    title: 'Introduction to TypeScript',
-    url: 'https://www.typescriptlang.org/docs/handbook/intro.html',
-    snippet: 'TypeScript is a strongly typed programming language that builds on JavaScript, giving you better tooling at any scale.',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'typescript code'
-  },
-  {
-    id: 6,
-    title: 'Firebase Documentation',
-    url: 'https://firebase.google.com/docs',
-    snippet: 'Firebase helps you build and run successful apps. Backed by Google and loved by app development teams - from startups to global enterprises.',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'database hosting'
-  },
 ];
 
 export default function LibraryPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [documents, setDocuments] = useState<Document[]>([]);
+
+  useEffect(() => {
+    try {
+      const storedDocsString = localStorage.getItem('scrapedDocuments');
+      if (storedDocsString) {
+        const storedDocs = JSON.parse(storedDocsString);
+        setDocuments(storedDocs);
+      } else {
+        // If no docs are in storage, use the initial set and store them.
+        setDocuments(initialDocuments);
+        localStorage.setItem('scrapedDocuments', JSON.stringify(initialDocuments));
+      }
+    } catch (error) {
+      console.error("Failed to load documents from localStorage", error);
+      setDocuments(initialDocuments);
+    }
+  }, []);
+
 
   const filteredDocuments = useMemo(() => {
-    if (!searchTerm) return mockDocuments;
-    return mockDocuments.filter(doc =>
+    if (!searchTerm) return documents;
+    return documents.filter(doc =>
       doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       doc.snippet.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm]);
+  }, [searchTerm, documents]);
 
   return (
     <div className="flex flex-col gap-4">

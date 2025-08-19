@@ -11,6 +11,16 @@ import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe, History } from "lucide-react";
 import { Separator } from '@/components/ui/separator';
 
+type Document = {
+  id: number;
+  title: string;
+  url: string;
+  snippet: string;
+  image: string;
+  aiHint: string;
+};
+
+
 type Job = {
   id: number;
   url: string;
@@ -39,6 +49,25 @@ export default function ScraperPage() {
                   title: "Scraping Complete",
                   description: `Finished scraping ${j.url}.`,
                 });
+                
+                // Save the scraped data to localStorage
+                try {
+                    const storedDocsString = localStorage.getItem('scrapedDocuments');
+                    const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
+                    const newDoc: Document = {
+                        id: Date.now(),
+                        url: j.url,
+                        title: `Scraped: ${j.url.split('//')[1]?.split('/')[0] || j.url}`,
+                        snippet: `This is scraped content from ${j.url} with a depth of ${j.levels}. The content is simulated as pure text.`,
+                        image: 'https://placehold.co/600x400.png',
+                        aiHint: 'web document'
+                    };
+                    const updatedDocs = [newDoc, ...storedDocs];
+                    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+                } catch (error) {
+                    console.error("Failed to save to localStorage", error);
+                }
+
                 return { ...j, progress: 100, status: 'completed' };
               }
               return { ...j, progress: newProgress };
@@ -65,6 +94,18 @@ export default function ScraperPage() {
         variant: "destructive",
       });
       return;
+    }
+
+    // A simple URL validation
+    try {
+        new URL(url);
+    } catch (_) {
+        toast({
+            title: "Invalid URL",
+            description: "Please enter a valid URL.",
+            variant: "destructive",
+        });
+        return;
     }
 
     const newJob: Job = {
@@ -96,7 +137,7 @@ export default function ScraperPage() {
               Web Scraper
             </CardTitle>
             <CardDescription>
-              Enter a URL and select the scraping levels to begin.
+              Enter a URL and select the scraping depth to begin.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -112,7 +153,7 @@ export default function ScraperPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="depth">Scraping Levels</Label>
+              <Label htmlFor="depth">Scraping Depth</Label>
               <Select value={levels} onValueChange={setLevels}>
                 <SelectTrigger id="depth" className="w-full">
                   <SelectValue placeholder="Select levels" />
