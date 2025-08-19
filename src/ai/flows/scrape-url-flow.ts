@@ -75,10 +75,11 @@ const findRelevantLinks = ai.defineTool(
 );
 
 // Helper function to fetch and parse a single URL
-async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string }> {
+async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string } | null> {
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!response.ok) {
+      // If response is not ok (e.g., 404), throw to be caught by the catch block.
       throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
     }
     const html = await response.text();
@@ -94,7 +95,8 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
     return { title, content, html };
   } catch (error) {
     console.error(`Error processing ${url}:`, error);
-    return { title: `Error: ${url}`, content: `Failed to retrieve content for ${url}.`, html: '' };
+    // Return null to indicate failure, so the caller can ignore this page.
+    return null;
   }
 }
 
@@ -119,7 +121,15 @@ const scrapeUrlFlow = ai.defineFlow(
       console.log(`Scraping page (${visitedUrls.size + 1}/${maxPages}): ${currentUrl}`);
       visitedUrls.add(currentUrl);
 
-      const { title, content, html } = await fetchAndProcessUrl(currentUrl);
+      const pageData = await fetchAndProcessUrl(currentUrl);
+
+      // If pageData is null (due to fetch error), skip to the next URL.
+      if (!pageData) {
+        continue;
+      }
+      
+      const { title, content, html } = pageData;
+
       if (content) {
         results.push({ url: currentUrl, title, content });
       }
