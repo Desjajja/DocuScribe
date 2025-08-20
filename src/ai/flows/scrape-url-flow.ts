@@ -16,6 +16,7 @@ import TurndownService from 'turndown';
 const ScrapeUrlInputSchema = z.object({
   startUrl: z.string().url().describe('The initial URL to start scraping from.'),
   maxPages: z.number().int().min(1).max(50).describe('The maximum number of pages to crawl.'),
+  existingTitle: z.string().optional().describe('The existing title of the document, if it is being updated.'),
 });
 export type ScrapeUrlInput = z.infer<typeof ScrapeUrlInputSchema>;
 
@@ -169,7 +170,7 @@ const scrapeUrlFlow = ai.defineFlow(
     inputSchema: ScrapeUrlInputSchema,
     outputSchema: ScrapeUrlOutputSchema,
   },
-  async ({ startUrl, maxPages }) => {
+  async ({ startUrl, maxPages, existingTitle }) => {
     const visitedUrls = new Set<string>();
     const urlQueue: string[] = [startUrl];
     const results: Omit<ScrapedPage, 'image'>[] = [];
@@ -218,29 +219,33 @@ const scrapeUrlFlow = ai.defineFlow(
       .join('\n\n---\n\n');
     
     let compilationTitle = 'Documentation Compilation';
-    try {
-      const url = new URL(startUrl);
-      const pathSegments = url.pathname.split('/').filter(s => s);
-      const hostSegments = url.hostname.split('.').filter(s => s !== 'www');
-      
-      // Prefer the last path segment if it's not a generic name
-      const lastPathSegment = pathSegments[pathSegments.length - 1];
-      if (lastPathSegment && !/^(docs|documentation|index|home)$/i.test(lastPathSegment)) {
-          compilationTitle = lastPathSegment;
-      } 
-      // Fallback to the second to last host segment (e.g., 'react' from 'react.dev')
-      else if (hostSegments.length > 1) {
-          compilationTitle = hostSegments[hostSegments.length - 2];
+    if (existingTitle) {
+      compilationTitle = existingTitle;
+    } else {
+      try {
+        const url = new URL(startUrl);
+        const pathSegments = url.pathname.split('/').filter(s => s);
+        const hostSegments = url.hostname.split('.').filter(s => s !== 'www');
+        
+        // Prefer the last path segment if it's not a generic name
+        const lastPathSegment = pathSegments[pathSegments.length - 1];
+        if (lastPathSegment && !/^(docs|documentation|index|home)$/i.test(lastPathSegment)) {
+            compilationTitle = lastPathSegment;
+        } 
+        // Fallback to the second to last host segment (e.g., 'react' from 'react.dev')
+        else if (hostSegments.length > 1) {
+            compilationTitle = hostSegments[hostSegments.length - 2];
+        }
+         // Further fallback to the first significant path segment
+        else if (pathSegments.length > 0) {
+          compilationTitle = pathSegments[0];
+        }
+        else {
+            compilationTitle = hostSegments.join(' ');
+        }
+      } catch (e) {
+        // Use default title on parsing error
       }
-       // Further fallback to the first significant path segment
-      else if (pathSegments.length > 0) {
-        compilationTitle = pathSegments[0];
-      }
-      else {
-          compilationTitle = hostSegments.join(' ');
-      }
-    } catch (e) {
-      // Use default title on parsing error
     }
     
     // Always return a single, aggregated document

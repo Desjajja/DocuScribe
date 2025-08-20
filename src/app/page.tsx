@@ -41,6 +41,7 @@ type Job = {
   isUpdate: boolean;
   updateId?: number;
   schedule: Schedule;
+  existingTitle?: string;
 };
 
 export default function ScraperPage() {
@@ -80,6 +81,7 @@ export default function ScraperPage() {
       const results = await scrapeUrl({
         startUrl: job.url,
         maxPages: job.maxPages,
+        existingTitle: job.existingTitle,
       });
 
       if (results.length === 0) {
@@ -144,6 +146,8 @@ export default function ScraperPage() {
     if (updateUrl && updateId && maxPagesParam && !processedUrlParams.current) {
       processedUrlParams.current = true;
 
+      const existingDoc = documents.find(d => d.id === parseInt(updateId, 10));
+
       const job: Job = {
         id: `${Date.now()}-${Math.random()}-${updateUrl}`,
         url: updateUrl,
@@ -154,6 +158,7 @@ export default function ScraperPage() {
         isUpdate: true,
         updateId: parseInt(updateId, 10),
         schedule: 'none', // Manual updates don't set a schedule
+        existingTitle: existingDoc?.title,
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
@@ -165,7 +170,7 @@ export default function ScraperPage() {
         processedUrlParams.current = false;
     }
     
-  }, [searchParams, runJob, router]);
+  }, [searchParams, runJob, router, documents]);
 
   useEffect(() => {
     const completedJob = jobs.find(job => job.status === 'complete' && job.result);
@@ -186,7 +191,7 @@ export default function ScraperPage() {
     }
   }, [jobs]);
 
-  const handleScrapeRequest = (url: string, maxPages: number, schedule: Schedule, isUpdate: boolean, updateId?: number) => {
+  const handleScrapeRequest = (url: string, maxPages: number, schedule: Schedule, isUpdate: boolean, updateId?: number, existingTitle?: string) => {
     const newJob: Job = {
       id: `${Date.now()}-${Math.random()}-${url}`,
       url,
@@ -197,6 +202,7 @@ export default function ScraperPage() {
       isUpdate,
       updateId,
       schedule,
+      existingTitle,
     };
     setJobs(prevJobs => [newJob, ...prevJobs]);
     runJob(newJob);
@@ -213,7 +219,7 @@ export default function ScraperPage() {
       });
       return;
     }
-    handleScrapeRequest(docToUpdate.url, maxPagesNum, docToUpdate.schedule, true, docToUpdate.id);
+    handleScrapeRequest(docToUpdate.url, maxPagesNum, docToUpdate.schedule, true, docToUpdate.id, docToUpdate.title);
     setDocToUpdate(null);
     setUrl('');
   };
@@ -235,6 +241,7 @@ export default function ScraperPage() {
     const existingDoc = documents.find(doc => doc.url === url);
     if (existingDoc) {
       setDocToUpdate(existingDoc);
+      setUpdateMaxPages(existingDoc.maxPages.toString());
       return;
     }
 
