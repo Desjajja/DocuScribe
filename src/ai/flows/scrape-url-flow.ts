@@ -202,7 +202,7 @@ const scrapeUrlFlow = ai.defineFlow(
         results.push({ url: currentUrl, title, content });
       }
 
-      if (html && visitedUrls.size < maxPages) {
+      if (html && visitedUrls.size <= maxPages) {
         const foundLinks = await findRelevantLinks({ baseUrl: currentUrl, htmlContent: html });
         for (const link of foundLinks) {
           if (!visitedUrls.has(link) && !urlQueue.includes(link)) {
