@@ -12,16 +12,20 @@ import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
 type Document = {
   id: number;
   title: string;
-  url: string;
+  url:string;
   content: string;
   image: string;
   aiHint: string;
   hashtags: string[];
   lastUpdated: string;
+  schedule: Schedule;
 };
 
 type Job = {
@@ -35,6 +39,7 @@ type Job = {
   error?: string;
   isUpdate: boolean;
   updateId?: number;
+  schedule: Schedule;
 };
 
 export default function ScraperPage() {
@@ -42,15 +47,14 @@ export default function ScraperPage() {
   const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
   const [maxPages, setMaxPages] = useState('5');
+  const [schedule, setSchedule] = useState<Schedule>('none');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
   const [updateMaxPages, setUpdateMaxPages] = useState('5');
   const [documents, setDocuments] = useState<Document[]>([]);
   
-  // Use a ref to act as a lock, preventing the useEffect from firing twice on the same navigation
   const processedUrlParams = useRef(false);
 
-  // Load documents from localStorage to check for collisions
   useEffect(() => {
     try {
       const storedDocsString = localStorage.getItem('scrapedDocuments');
@@ -70,7 +74,6 @@ export default function ScraperPage() {
 
   const runJob = useCallback(async (job: Job) => {
     try {
-      // Step 1: Scraping
       updateJob(job.id, { status: 'scraping', progress: 10, message: 'Fetching and parsing content...' });
       
       const results = await scrapeUrl({
@@ -85,12 +88,10 @@ export default function ScraperPage() {
       const compilation = results[0];
       updateJob(job.id, { status: 'scraping', progress: 50, message: 'Content parsed successfully.' });
       
-      // Step 2: Generating Hashtags
       updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
       const contentSample = compilation.content.substring(0, 4000);
       const hashtagResult = await generateHashtags({ content: contentSample, url: compilation.url });
 
-      // Step 3: Storing the document
       const docData = {
         url: compilation.url,
         title: compilation.title,
@@ -99,6 +100,7 @@ export default function ScraperPage() {
         aiHint: 'web document compilation',
         hashtags: hashtagResult.hashtags,
         lastUpdated: new Date().toISOString(),
+        schedule: job.schedule,
       };
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
@@ -107,7 +109,8 @@ export default function ScraperPage() {
       let finalDoc: Document;
 
       if (job.isUpdate && job.updateId) {
-        finalDoc = { ...docData, id: job.updateId };
+        const existingDoc = storedDocs.find(d => d.id === job.updateId);
+        finalDoc = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none' }; // Retain existing schedule on manual update
         updatedDocs = storedDocs.map(d => d.id === job.updateId ? finalDoc : d);
       } else {
         finalDoc = { ...docData, id: Date.now() };
@@ -115,7 +118,7 @@ export default function ScraperPage() {
       }
       
       localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
-      window.dispatchEvent(new Event('storage')); // Notify other tabs/pages
+      window.dispatchEvent(new Event('storage'));
 
       updateJob(job.id, { 
         status: 'complete', 
@@ -131,14 +134,12 @@ export default function ScraperPage() {
     }
   }, [updateJob]);
 
-  // Effect to handle updates triggered from the library page via URL params
   useEffect(() => {
     const updateUrl = searchParams.get('updateUrl');
     const updateId = searchParams.get('updateId');
     const maxPagesParam = searchParams.get('maxPages');
 
     if (updateUrl && updateId && maxPagesParam && !processedUrlParams.current) {
-      // Engage the lock to prevent re-processing
       processedUrlParams.current = true;
 
       const job: Job = {
@@ -150,21 +151,19 @@ export default function ScraperPage() {
         message: 'Initializing update...',
         isUpdate: true,
         updateId: parseInt(updateId, 10),
+        schedule: 'none', // Manual updates don't set a schedule
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
       
-      // Clean the URL to prevent re-triggering on refresh/re-render
       router.replace('/', undefined);
     }
     
-    // Reset the lock if the search params are cleared
     if (!updateUrl && !updateId && !maxPagesParam) {
         processedUrlParams.current = false;
     }
     
   }, [searchParams, runJob, router]);
-
 
   useEffect(() => {
     const completedJob = jobs.find(job => job.status === 'complete' && job.result);
@@ -185,7 +184,7 @@ export default function ScraperPage() {
     }
   }, [jobs]);
 
-  const handleScrapeRequest = (url: string, maxPages: number, isUpdate: boolean, updateId?: number) => {
+  const handleScrapeRequest = (url: string, maxPages: number, schedule: Schedule, isUpdate: boolean, updateId?: number) => {
     const newJob: Job = {
       id: `${Date.now()}-${Math.random()}-${url}`,
       url,
@@ -195,6 +194,7 @@ export default function ScraperPage() {
       message: 'Initializing...',
       isUpdate,
       updateId,
+      schedule,
     };
     setJobs(prevJobs => [newJob, ...prevJobs]);
     runJob(newJob);
@@ -211,11 +211,10 @@ export default function ScraperPage() {
       });
       return;
     }
-    handleScrapeRequest(docToUpdate.url, maxPagesNum, true, docToUpdate.id);
+    handleScrapeRequest(docToUpdate.url, maxPagesNum, docToUpdate.schedule, true, docToUpdate.id);
     setDocToUpdate(null);
     setUrl('');
   };
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,7 +230,6 @@ export default function ScraperPage() {
       return;
     }
     
-    // Collision detection
     const existingDoc = documents.find(doc => doc.url === url);
     if (existingDoc) {
       setDocToUpdate(existingDoc);
@@ -248,7 +246,7 @@ export default function ScraperPage() {
       return;
     }
 
-    handleScrapeRequest(url, maxPagesNum, false);
+    handleScrapeRequest(url, maxPagesNum, schedule, false);
     setUrl('');
   };
   
@@ -287,18 +285,34 @@ export default function ScraperPage() {
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="maxPages">Maximum Pages</Label>
-              <Input
-                id="maxPages"
-                type="number"
-                placeholder="5"
-                value={maxPages}
-                onChange={(e) => setMaxPages(e.target.value)}
-                min="1"
-                max="50"
-                required
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="maxPages">Maximum Pages</Label>
+                <Input
+                  id="maxPages"
+                  type="number"
+                  placeholder="5"
+                  value={maxPages}
+                  onChange={(e) => setMaxPages(e.target.value)}
+                  min="1"
+                  max="50"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule">Schedule Updates</Label>
+                <Select value={schedule} onValueChange={(value: Schedule) => setSchedule(value)}>
+                  <SelectTrigger id="schedule">
+                    <SelectValue placeholder="No schedule" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
           <CardFooter>
@@ -353,7 +367,7 @@ export default function ScraperPage() {
             <DialogHeader>
                 <DialogTitle>Update Existing Document</DialogTitle>
                 <DialogDescription>
-                  A document with this URL already exists. Would you like to update it? Please specify the maximum number of pages to re-scrape.
+                  A document with this URL already exists. Would you like to re-scrape it now? This won't affect its existing update schedule.
                 </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">

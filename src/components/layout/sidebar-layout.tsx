@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookText, FileText, Globe, Menu } from 'lucide-react';
+import { BookText, FileText, Globe, Menu, CalendarClock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 const navItems = [
   { href: '/', label: 'Scraper', icon: Globe },
   { href: '/library', label: 'Library', icon: BookText },
+  { href: '/schedule', label: 'Scheduled Tasks', icon: CalendarClock },
   { href: '/mcp', label: 'MCP Data', icon: FileText },
 ];
 

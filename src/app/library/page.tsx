@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from '@/components/ui/label';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, MoreVertical, Edit, Trash2, Download, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, MoreVertical, Edit, Trash2, Download, RefreshCw, CalendarClock } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
 import ReactMarkdown from 'react-markdown';
@@ -19,6 +20,7 @@ import remarkGfm from 'remark-gfm';
 import { format, isValid } from 'date-fns';
 import { useRouter } from 'next/navigation';
 
+type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
 type Document = {
   id: number;
@@ -29,6 +31,7 @@ type Document = {
   content: string;
   hashtags: string[];
   lastUpdated: string;
+  schedule: Schedule;
 };
 
 type ParsedSection = {
@@ -47,6 +50,7 @@ const initialDocuments: Document[] = [
     content: '## Getting Started\n\nURL: https://react.dev/learn\n\nThis is an example document. Scrape a website to add real content to your library.',
     hashtags: ['react', 'javascript', 'frontend'],
     lastUpdated: new Date().toISOString(),
+    schedule: 'none',
   },
 ];
 
@@ -58,8 +62,9 @@ export default function LibraryPage() {
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
-  const [updateMaxPages, setUpdateMaxPages] = useState('5');
+  const [docToManage, setDocToManage] = useState<Document | null>(null);
+  const [manageMaxPages, setManageMaxPages] = useState('5');
+  const [manageSchedule, setManageSchedule] = useState<Schedule>('none');
 
   const loadDocuments = () => {
     try {
@@ -79,14 +84,9 @@ export default function LibraryPage() {
   
   useEffect(() => {
     loadDocuments();
-
-    const handleStorageChange = () => {
-        loadDocuments();
-    };
+    const handleStorageChange = () => { loadDocuments(); };
     window.addEventListener('storage', handleStorageChange);
-    return () => {
-        window.removeEventListener('storage', handleStorageChange);
-    };
+    return () => { window.removeEventListener('storage', handleStorageChange); };
   }, []);
 
   const filteredDocuments = useMemo(() => {
@@ -121,34 +121,47 @@ export default function LibraryPage() {
     toast({ title: "Document Deleted", description: "The document has been removed from your library." });
   };
   
-  const handleUpdate = (doc: Document) => {
-    setDocToUpdate(doc);
+  const handleManageSchedule = (doc: Document) => {
+    setDocToManage(doc);
+    setManageSchedule(doc.schedule || 'none');
+    setManageMaxPages('5');
   };
 
-  const handleConfirmUpdate = () => {
-    if (!docToUpdate) return;
-    const maxPagesNum = parseInt(updateMaxPages, 10);
+  const handleConfirmUpdateNow = () => {
+    if (!docToManage) return;
+    const maxPagesNum = parseInt(manageMaxPages, 10);
     if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
       toast({
         title: "Invalid Number",
-        description: "Please enter a number between 1 and 50 for the maximum pages.",
+        description: "Please enter a number between 1 and 50 for max pages.",
         variant: "destructive",
       });
       return;
     }
-    
-    // Pass update info to scraper page via query params
     const query = new URLSearchParams({
-      updateUrl: docToUpdate.url,
-      updateId: docToUpdate.id.toString(),
+      updateUrl: docToManage.url,
+      updateId: docToManage.id.toString(),
       maxPages: maxPagesNum.toString(),
     });
-    
     router.push(`/?${query.toString()}`);
+    setDocToManage(null);
+  };
+
+  const handleSaveSchedule = () => {
+    if (!docToManage) return;
+    const updatedDocs = documents.map(d =>
+        d.id === docToManage.id ? { ...d, schedule: manageSchedule } : d
+    );
+    setDocuments(updatedDocs);
+    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    toast({
+        title: "Schedule Updated",
+        description: `The update schedule for "${docToManage.title}" has been set.`,
+    });
+    setDocToManage(null);
   };
 
   const handleExportMarkdown = (doc: Document) => {
-    // Sanitize title for filename
     const filename = `${doc.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
     const blob = new Blob([doc.content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -265,8 +278,15 @@ export default function LibraryPage() {
                   )}
                 </Dialog>
 
-                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">
-                    {formatDate(doc.lastUpdated)}
+                <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                    <div className="bg-black/60 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm">
+                        {formatDate(doc.lastUpdated)}
+                    </div>
+                    {doc.schedule && doc.schedule !== 'none' && (
+                       <div className="p-1.5 bg-black/60 text-white rounded-full backdrop-blur-sm">
+                         <CalendarClock className="h-3 w-3" />
+                       </div>
+                    )}
                 </div>
 
                 <div className="absolute top-2 right-2">
@@ -277,9 +297,9 @@ export default function LibraryPage() {
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleUpdate(doc)}>
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                                <span>Update</span>
+                            <DropdownMenuItem onClick={() => handleManageSchedule(doc)}>
+                                <CalendarClock className="mr-2 h-4 w-4" />
+                                <span>Manage Schedule</span>
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleExportMarkdown(doc)}>
                                 <Download className="mr-2 h-4 w-4" />
@@ -352,36 +372,68 @@ export default function LibraryPage() {
                   className="col-span-3"
                 />
             </div>
-            <DialogClose asChild>
-                <Button onClick={handleSaveRename}>Save changes</Button>
-            </DialogClose>
+            <DialogFooter>
+               <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+               </DialogClose>
+               <Button onClick={handleSaveRename}>Save changes</Button>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
       
-      <Dialog open={!!docToUpdate} onOpenChange={(isOpen) => !isOpen && setDocToUpdate(null)}>
+      <Dialog open={!!docToManage} onOpenChange={(isOpen) => !isOpen && setDocToManage(null)}>
         <DialogContent>
             <DialogHeader>
-                <DialogTitle>Update Document</DialogTitle>
+                <DialogTitle>Manage Schedule</DialogTitle>
                 <DialogDescription>
-                  Re-scrape the content for "{docToUpdate?.title}". Please specify the maximum number of pages to crawl for the update.
+                  Update the schedule for "{docToManage?.title}" or trigger a manual re-scrape.
                 </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
                <div className="space-y-2">
-                  <Label htmlFor="updateMaxPages">Maximum Pages</Label>
-                  <Input
-                    id="updateMaxPages"
-                    type="number"
-                    value={updateMaxPages}
-                    onChange={(e) => setUpdateMaxPages(e.target.value)}
-                    min="1"
-                    max="50"
-                  />
+                  <Label htmlFor="schedule">Update Schedule</Label>
+                  <Select value={manageSchedule} onValueChange={(value: Schedule) => setManageSchedule(value)}>
+                    <SelectTrigger id="schedule">
+                      <SelectValue placeholder="No schedule" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                        Or
+                        </span>
+                    </div>
+                </div>
+                 <div className="space-y-2">
+                  <Label htmlFor="updateMaxPages">Update Now (Max Pages)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                        id="updateMaxPages"
+                        type="number"
+                        value={manageMaxPages}
+                        onChange={(e) => setManageMaxPages(e.target.value)}
+                        min="1"
+                        max="50"
+                    />
+                    <Button onClick={handleConfirmUpdateNow} variant="secondary" className="whitespace-nowrap">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Update Now
+                    </Button>
+                  </div>
                 </div>
             </div>
             <DialogFooter>
-                <Button variant="outline" onClick={() => setDocToUpdate(null)}>Cancel</Button>
-                <Button onClick={handleConfirmUpdate}>Start Update</Button>
+                <Button variant="outline" onClick={() => setDocToManage(null)}>Cancel</Button>
+                <Button onClick={handleSaveSchedule}>Save Schedule</Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
