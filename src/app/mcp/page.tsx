@@ -12,10 +12,10 @@ export default function McpServerPage() {
   const vscodeSettings = {
     "mcp": {
       "servers": {
-        "context7": {
+        "docuscribe": {
           "type": "stdio",
           "command": "npx",
-          "args": ["-y", "@upstash/context7-mcp"]
+          "args": ["-y", "@docuscribe/mcp-server"]
         }
       }
     }
