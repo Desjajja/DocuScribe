@@ -19,6 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { format, isValid } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { saveDocuments } from '../actions';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -68,6 +69,20 @@ export default function LibraryPage() {
   const [manageMaxPages, setManageMaxPages] = useState('5');
   const [manageSchedule, setManageSchedule] = useState<Schedule>('none');
 
+  const updateDocuments = async (newDocs: Document[]) => {
+    setDocuments(newDocs);
+    localStorage.setItem('scrapedDocuments', JSON.stringify(newDocs));
+    try {
+      await saveDocuments(newDocs);
+    } catch (error) {
+      toast({
+        title: "Sync Error",
+        description: "Failed to sync document library with the server.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const loadDocuments = () => {
     try {
       const storedDocsString = localStorage.getItem('scrapedDocuments');
@@ -75,8 +90,7 @@ export default function LibraryPage() {
         const storedDocs = JSON.parse(storedDocsString);
         setDocuments(storedDocs);
       } else {
-        setDocuments(initialDocuments);
-        localStorage.setItem('scrapedDocuments', JSON.stringify(initialDocuments));
+        updateDocuments(initialDocuments);
       }
     } catch (error) {
       console.error("Failed to load documents from localStorage", error);
@@ -110,16 +124,14 @@ export default function LibraryPage() {
     const updatedDocs = documents.map(d =>
       d.id === editingDoc.id ? { ...d, title: newTitle.trim(), lastUpdated: new Date().toISOString() } : d
     );
-    setDocuments(updatedDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    updateDocuments(updatedDocs);
     toast({ title: "Document Renamed", description: `"${editingDoc.title}" was renamed to "${newTitle.trim()}".` });
     setEditingDoc(null);
   };
 
   const handleDelete = (docId: number) => {
     const updatedDocs = documents.filter(d => d.id !== docId);
-    setDocuments(updatedDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    updateDocuments(updatedDocs);
     toast({ title: "Document Deleted", description: "The document has been removed from your library." });
   };
   
@@ -164,8 +176,7 @@ export default function LibraryPage() {
     const updatedDocs = documents.map(d =>
         d.id === docToManage.id ? { ...d, schedule: manageSchedule, maxPages: maxPagesNum } : d
     );
-    setDocuments(updatedDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    updateDocuments(updatedDocs);
     toast({
         title: "Schedule Updated",
         description: `The update schedule for "${docToManage.title}" has been set.`,

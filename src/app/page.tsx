@@ -13,6 +13,7 @@ import { Loader2, Globe, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { saveDocuments } from './actions';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -56,6 +57,21 @@ export default function ScraperPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   
   const processedUrlParams = useRef(false);
+
+  const updateAndSyncDocuments = async (newDocs: Document[]) => {
+    setDocuments(newDocs);
+    localStorage.setItem('scrapedDocuments', JSON.stringify(newDocs));
+    try {
+      await saveDocuments(newDocs);
+      window.dispatchEvent(new Event('storage')); // Notify other tabs/windows
+    } catch (error) {
+      toast({
+        title: "Sync Error",
+        description: "Failed to sync document library with the server.",
+        variant: "destructive",
+      });
+    }
+  };
 
   useEffect(() => {
     try {
@@ -121,8 +137,7 @@ export default function ScraperPage() {
         updatedDocs = [finalDoc, ...storedDocs];
       }
       
-      localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
-      window.dispatchEvent(new Event('storage'));
+      await updateAndSyncDocuments(updatedDocs);
 
       updateJob(job.id, { 
         status: 'complete', 
@@ -136,17 +151,19 @@ export default function ScraperPage() {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
       updateJob(job.id, { status: 'failed', progress: 100, message: 'Scraping failed.', error: errorMessage });
     }
-  }, [updateJob]);
+  }, [updateJob, updateAndSyncDocuments]);
 
   useEffect(() => {
+    if (processedUrlParams.current) return;
+  
     const updateUrl = searchParams.get('updateUrl');
     const updateId = searchParams.get('updateId');
     const maxPagesParam = searchParams.get('maxPages');
     const existingTitleParam = searchParams.get('existingTitle');
-
-    if (updateUrl && updateId && maxPagesParam && !processedUrlParams.current) {
+  
+    if (updateUrl && updateId && maxPagesParam) {
       processedUrlParams.current = true;
-
+  
       const job: Job = {
         id: `${Date.now()}-${Math.random()}-${updateUrl}`,
         url: updateUrl,
@@ -156,19 +173,14 @@ export default function ScraperPage() {
         message: 'Initializing update...',
         isUpdate: true,
         updateId: parseInt(updateId, 10),
-        schedule: 'none', // Manual updates don't set a schedule
+        schedule: 'none',
         existingTitle: existingTitleParam || undefined,
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
-      
+  
       // Use replace to remove query params from URL without adding to history
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('updateUrl');
-      newUrl.searchParams.delete('updateId');
-      newUrl.searchParams.delete('maxPages');
-      newUrl.searchParams.delete('existingTitle');
-      router.replace(newUrl.pathname + newUrl.search, { shallow: true });
+      router.replace('/', undefined);
     }
   }, [searchParams, runJob, router]);
 
