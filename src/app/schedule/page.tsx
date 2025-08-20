@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Label } from '@/components/ui/label';
 import { MoreHorizontal, CalendarClock, Ban } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
