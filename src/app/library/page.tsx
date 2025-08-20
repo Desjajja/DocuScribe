@@ -32,6 +32,7 @@ type Document = {
   hashtags: string[];
   lastUpdated: string;
   schedule: Schedule;
+  maxPages: number;
 };
 
 type ParsedSection = {
@@ -51,6 +52,7 @@ const initialDocuments: Document[] = [
     hashtags: ['react', 'javascript', 'frontend'],
     lastUpdated: new Date().toISOString(),
     schedule: 'none',
+    maxPages: 5,
   },
 ];
 
@@ -124,7 +126,7 @@ export default function LibraryPage() {
   const handleManageSchedule = (doc: Document) => {
     setDocToManage(doc);
     setManageSchedule(doc.schedule || 'none');
-    setManageMaxPages('5');
+    setManageMaxPages(doc.maxPages?.toString() || '5');
   };
 
   const handleConfirmUpdateNow = () => {
@@ -149,8 +151,17 @@ export default function LibraryPage() {
 
   const handleSaveSchedule = () => {
     if (!docToManage) return;
+     const maxPagesNum = parseInt(manageMaxPages, 10);
+    if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
+      toast({
+        title: "Invalid Number",
+        description: "Please enter a number between 1 and 50 for max pages.",
+        variant: "destructive",
+      });
+      return;
+    }
     const updatedDocs = documents.map(d =>
-        d.id === docToManage.id ? { ...d, schedule: manageSchedule } : d
+        d.id === docToManage.id ? { ...d, schedule: manageSchedule, maxPages: maxPagesNum } : d
     );
     setDocuments(updatedDocs);
     localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
@@ -391,6 +402,27 @@ export default function LibraryPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
                <div className="space-y-2">
+                  <Label htmlFor="updateMaxPages">Maximum Pages</Label>
+                  <Input
+                      id="updateMaxPages"
+                      type="number"
+                      value={manageMaxPages}
+                      onChange={(e) => setManageMaxPages(e.target.value)}
+                      min="1"
+                      max="50"
+                  />
+                </div>
+                <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                        And
+                        </span>
+                    </div>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="schedule">Update Schedule</Label>
                   <Select value={manageSchedule} onValueChange={(value: Schedule) => setManageSchedule(value)}>
                     <SelectTrigger id="schedule">
@@ -404,36 +436,15 @@ export default function LibraryPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="relative my-4">
-                    <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-background px-2 text-muted-foreground">
-                        Or
-                        </span>
-                    </div>
-                </div>
-                 <div className="space-y-2">
-                  <Label htmlFor="updateMaxPages">Update Now (Max Pages)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                        id="updateMaxPages"
-                        type="number"
-                        value={manageMaxPages}
-                        onChange={(e) => setManageMaxPages(e.target.value)}
-                        min="1"
-                        max="50"
-                    />
-                    <Button onClick={handleConfirmUpdateNow} variant="secondary" className="whitespace-nowrap">
-                        <RefreshCw className="mr-2 h-4 w-4" /> Update Now
-                    </Button>
-                  </div>
-                </div>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setDocToManage(null)}>Cancel</Button>
-                <Button onClick={handleSaveSchedule}>Save Schedule</Button>
+                <div className="flex gap-2">
+                   <Button onClick={handleSaveSchedule} className="flex-grow">Save Schedule</Button>
+                   <Button onClick={handleConfirmUpdateNow} variant="secondary" className="whitespace-nowrap">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Update Now
+                   </Button>
+                </div>
             </DialogFooter>
         </DialogContent>
       </Dialog>

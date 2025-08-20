@@ -26,6 +26,7 @@ type Document = {
   hashtags: string[];
   lastUpdated: string;
   schedule: Schedule;
+  maxPages: number;
 };
 
 type Job = {
@@ -101,6 +102,7 @@ export default function ScraperPage() {
         hashtags: hashtagResult.hashtags,
         lastUpdated: new Date().toISOString(),
         schedule: job.schedule,
+        maxPages: job.maxPages,
       };
 
       const storedDocsString = localStorage.getItem('scrapedDocuments');
@@ -110,7 +112,7 @@ export default function ScraperPage() {
 
       if (job.isUpdate && job.updateId) {
         const existingDoc = storedDocs.find(d => d.id === job.updateId);
-        finalDoc = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none' }; // Retain existing schedule on manual update
+        finalDoc = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5 }; // Retain existing schedule on manual update
         updatedDocs = storedDocs.map(d => d.id === job.updateId ? finalDoc : d);
       } else {
         finalDoc = { ...docData, id: Date.now() };

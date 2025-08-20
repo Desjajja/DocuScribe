@@ -20,6 +20,7 @@ type Document = {
   title: string;
   url: string;
   schedule: Schedule;
+  maxPages: number;
 };
 
 export default function SchedulePage() {
@@ -134,6 +135,7 @@ export default function SchedulePage() {
                 </TableHead>
                 <TableHead>Compilation</TableHead>
                 <TableHead>Schedule</TableHead>
+                <TableHead>Max Pages</TableHead>
                 <TableHead>Next Update (Est.)</TableHead>
                 <TableHead className="w-[50px]"></TableHead>
               </TableRow>
@@ -154,6 +156,7 @@ export default function SchedulePage() {
                   <TableCell>
                       <Badge variant="secondary" className="capitalize">{doc.schedule}</Badge>
                   </TableCell>
+                   <TableCell>{doc.maxPages}</TableCell>
                   <TableCell>{getNextUpdate(doc.schedule)}</TableCell>
                   <TableCell>
                     <DropdownMenu>
