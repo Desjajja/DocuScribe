@@ -13,7 +13,7 @@ import { Loader2, Globe, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { saveDocuments } from './actions';
+import { addDocument, getDocumentByUrl, updateDocument, getDocuments } from '@/app/actions';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -54,35 +54,8 @@ export default function ScraperPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
   const [updateMaxPages, setUpdateMaxPages] = useState('5');
-  const [documents, setDocuments] = useState<Document[]>([]);
   
   const processedUrlParams = useRef(false);
-
-  const updateAndSyncDocuments = async (newDocs: Document[]) => {
-    setDocuments(newDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(newDocs));
-    try {
-      await saveDocuments(newDocs);
-      window.dispatchEvent(new Event('storage')); // Notify other tabs/windows
-    } catch (error) {
-      toast({
-        title: "Sync Error",
-        description: "Failed to sync document library with the server.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const storedDocsString = localStorage.getItem('scrapedDocuments');
-      if (storedDocsString) {
-        setDocuments(JSON.parse(storedDocsString));
-      }
-    } catch (error) {
-      console.error("Failed to load documents from localStorage", error);
-    }
-  }, []);
 
   const updateJob = useCallback((id: string, updates: Partial<Job>) => {
     setJobs(prevJobs =>
@@ -123,22 +96,18 @@ export default function ScraperPage() {
         maxPages: job.maxPages,
       };
 
-      const storedDocsString = localStorage.getItem('scrapedDocuments');
-      const storedDocs: Document[] = storedDocsString ? JSON.parse(storedDocsString) : [];
-      let updatedDocs: Document[];
       let finalDoc: Document;
 
       if (job.isUpdate && job.updateId) {
-        const existingDoc = storedDocs.find(d => d.id === job.updateId);
-        finalDoc = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5 }; // Retain existing schedule on manual update
-        updatedDocs = storedDocs.map(d => d.id === job.updateId ? finalDoc : d);
+        const existingDoc = (await getDocuments()).find(d => d.id === job.updateId);
+        const docToUpdate: Document = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5 }; // Retain existing schedule on manual update
+        await updateDocument(docToUpdate);
+        finalDoc = docToUpdate;
       } else {
-        finalDoc = { ...docData, id: Date.now() };
-        updatedDocs = [finalDoc, ...storedDocs];
+        const newId = await addDocument(docData);
+        finalDoc = { ...docData, id: newId };
       }
       
-      await updateAndSyncDocuments(updatedDocs);
-
       updateJob(job.id, { 
         status: 'complete', 
         progress: 100, 
@@ -151,7 +120,8 @@ export default function ScraperPage() {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
       updateJob(job.id, { status: 'failed', progress: 100, message: 'Scraping failed.', error: errorMessage });
     }
-  }, [updateJob, updateAndSyncDocuments]);
+  }, [updateJob]);
+
 
   useEffect(() => {
     if (processedUrlParams.current) return;
@@ -179,7 +149,6 @@ export default function ScraperPage() {
       setJobs(prev => [job, ...prev]);
       runJob(job);
   
-      // Use replace to remove query params from URL without adding to history
       router.replace('/', undefined);
     }
   }, [searchParams, runJob, router]);
@@ -251,7 +220,7 @@ export default function ScraperPage() {
       return;
     }
     
-    const existingDoc = documents.find(doc => doc.url === url);
+    const existingDoc = await getDocumentByUrl(url);
     if (existingDoc) {
       setDocToUpdate(existingDoc);
       setUpdateMaxPages(existingDoc.maxPages.toString());
@@ -414,4 +383,3 @@ export default function ScraperPage() {
     </div>
   );
 }
- 

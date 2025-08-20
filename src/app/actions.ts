@@ -1,29 +1,80 @@
 'use server';
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { db } from '@/lib/db-server';
+import type { Document, Schedule } from '@/lib/db';
 
-type Document = {
-  id: number;
-  title: string;
-  url: string;
-  image: string;
-  aiHint: string;
-  content: string;
-  hashtags: string[];
-  lastUpdated: string;
-  schedule: 'none' | 'daily' | 'weekly' | 'monthly';
-  maxPages: number;
-};
 
-export async function saveDocuments(documents: Document[]) {
-  try {
-    const filePath = path.join(process.cwd(), 'scrapedDocuments.json');
-    await fs.writeFile(filePath, JSON.stringify(documents, null, 2), 'utf-8');
-  } catch (error) {
-    console.error('Failed to save documents:', error);
-    // Depending on requirements, you might want to throw the error
-    // to let the client know the save operation failed.
-    throw new Error('Failed to save documents to the server.');
-  }
+export async function getDocuments(): Promise<Document[]> {
+  const stmt = db.prepare('SELECT * FROM documents ORDER BY lastUpdated DESC');
+  const rows = stmt.all() as any[];
+  return rows.map(row => ({
+    ...row,
+    hashtags: JSON.parse(row.hashtags || '[]'),
+  }));
+}
+
+export async function getDocumentByUrl(url: string): Promise<Document | null> {
+    const stmt = db.prepare('SELECT * FROM documents WHERE url = ?');
+    const row = stmt.get(url) as any;
+    if (!row) return null;
+    return {
+        ...row,
+        hashtags: JSON.parse(row.hashtags || '[]'),
+    };
+}
+
+export async function addDocument(doc: Omit<Document, 'id'>): Promise<number> {
+  const { title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = doc;
+  const stmt = db.prepare(`
+    INSERT INTO documents (title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const result = stmt.run(
+    title,
+    url,
+    image,
+    aiHint,
+    content,
+    JSON.stringify(hashtags),
+    lastUpdated,
+    schedule,
+    maxPages
+  );
+  return result.lastInsertRowid as number;
+}
+
+export async function updateDocument(doc: Document): Promise<void> {
+  const { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = doc;
+  const stmt = db.prepare(`
+    UPDATE documents
+    SET title = ?, url = ?, image = ?, aiHint = ?, content = ?, hashtags = ?, lastUpdated = ?, schedule = ?, maxPages = ?
+    WHERE id = ?
+  `);
+  stmt.run(
+    title,
+    url,
+    image,
+    aiHint,
+    content,
+    JSON.stringify(hashtags),
+    lastUpdated,
+    schedule,
+    maxPages,
+    id
+  );
+}
+
+export async function deleteDocument(id: number): Promise<void> {
+  const stmt = db.prepare('DELETE FROM documents WHERE id = ?');
+  stmt.run(id);
+}
+
+export async function updateDocumentSchedule(id: number, schedule: Schedule, maxPages?: number): Promise<void> {
+    if (maxPages !== undefined) {
+        const stmt = db.prepare('UPDATE documents SET schedule = ?, maxPages = ? WHERE id = ?');
+        stmt.run(schedule, maxPages, id);
+    } else {
+        const stmt = db.prepare('UPDATE documents SET schedule = ? WHERE id = ?');
+        stmt.run(schedule, id);
+    }
 }

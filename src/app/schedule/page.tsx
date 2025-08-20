@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { MoreHorizontal, CalendarClock, Ban } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { getDocuments, updateDocumentSchedule } from '@/app/actions';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -28,24 +29,28 @@ export default function SchedulePage() {
   const [selectedDocs, setSelectedDocs] = useState<Set<number>>(new Set());
   const [isEditing, setIsEditing] = useState(false);
   const [editSchedule, setEditSchedule] = useState<Schedule>('none');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const loadDocuments = () => {
+  const loadDocuments = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const storedDocsString = localStorage.getItem('scrapedDocuments');
-      if (storedDocsString) {
-        setAllDocuments(JSON.parse(storedDocsString));
-      }
+      const docs = await getDocuments();
+      setAllDocuments(docs.map(({id, title, url, schedule, maxPages}) => ({id, title, url, schedule, maxPages})));
     } catch (error) {
-      console.error("Failed to load documents from localStorage", error);
+      console.error("Failed to load documents from DB", error);
+      toast({
+        title: "Error",
+        description: "Could not load documents from the database.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadDocuments();
-    const handleStorageChange = () => { loadDocuments(); };
-    window.addEventListener('storage', handleStorageChange);
-    return () => { window.removeEventListener('storage', handleStorageChange); };
-  }, []);
+  }, [loadDocuments]);
 
   const scheduledDocuments = useMemo(() => {
     return allDocuments.filter(doc => doc.schedule && doc.schedule !== 'none');
@@ -69,24 +74,20 @@ export default function SchedulePage() {
     setSelectedDocs(newSelection);
   };
   
-  const handleCancelSelected = () => {
+  const handleCancelSelected = async () => {
     if (selectedDocs.size === 0) return;
-    const updatedDocs = allDocuments.map(doc => 
-        selectedDocs.has(doc.id) ? { ...doc, schedule: 'none' } : doc
-    );
-    setAllDocuments(updatedDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    const updates = Array.from(selectedDocs).map(id => updateDocumentSchedule(id, 'none'));
+    await Promise.all(updates);
+    await loadDocuments();
     toast({ title: "Schedules Canceled", description: `Canceled ${selectedDocs.size} scheduled update(s).` });
     setSelectedDocs(new Set());
   };
 
-  const handleApplyEdit = () => {
+  const handleApplyEdit = async () => {
     if (selectedDocs.size === 0) return;
-     const updatedDocs = allDocuments.map(doc => 
-        selectedDocs.has(doc.id) ? { ...doc, schedule: editSchedule } : doc
-    );
-    setAllDocuments(updatedDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+    const updates = Array.from(selectedDocs).map(id => updateDocumentSchedule(id, editSchedule));
+    await Promise.all(updates);
+    await loadDocuments();
     toast({ title: "Schedules Updated", description: `Updated ${selectedDocs.size} schedule(s) to ${editSchedule}.` });
     setSelectedDocs(new Set());
     setIsEditing(false);
@@ -102,12 +103,9 @@ export default function SchedulePage() {
       }
   }
 
-  const handleCancelSingle = (docId: number) => {
-      const updatedDocs = allDocuments.map(doc => 
-        doc.id === docId ? { ...doc, schedule: 'none' } : doc
-      );
-      setAllDocuments(updatedDocs);
-      localStorage.setItem('scrapedDocuments', JSON.stringify(updatedDocs));
+  const handleCancelSingle = async (docId: number) => {
+      await updateDocumentSchedule(docId, 'none');
+      await loadDocuments();
       toast({ title: "Schedule Canceled", description: `The scheduled update has been canceled.` });
   }
 
@@ -118,7 +116,9 @@ export default function SchedulePage() {
         <p className="text-muted-foreground">Manage and monitor your automated documentation updates.</p>
       </header>
       
-      {scheduledDocuments.length > 0 ? (
+      {isLoading ? (
+        <p>Loading scheduled tasks...</p>
+      ) : scheduledDocuments.length > 0 ? (
         <div className="border rounded-lg">
             <div className="p-4 flex items-center gap-4">
                 <Button onClick={() => setIsEditing(true)} disabled={selectedDocs.size === 0}>Edit Selected</Button>

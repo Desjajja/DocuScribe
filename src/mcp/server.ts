@@ -1,20 +1,7 @@
-import { createStdioMcpServer, McpProvider, Context, Document } from '@modal-protocol/core';
+/*
+import { createStdioMcpServer, McpProvider, Context } from '@modal-protocol/core';
 import { findRelevantDocument, FindRelevantDocumentInput } from '@/ai/flows/find-relevant-document-flow';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-
-type LibraryDocument = {
-  id: number;
-  title: string;
-  url: string;
-  image: string;
-  aiHint: string;
-  content: string;
-  hashtags: string[];
-  lastUpdated: string;
-  schedule: 'none' | 'daily' | 'weekly' | 'monthly';
-  maxPages: number;
-};
+import { getDocuments } from '@/app/actions';
 
 const docuscribeProvider: McpProvider = {
   name: 'docuscribe-provider',
@@ -25,9 +12,7 @@ const docuscribeProvider: McpProvider = {
     }
 
     try {
-      const filePath = path.join(process.cwd(), 'scrapedDocuments.json');
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      const documents: LibraryDocument[] = JSON.parse(fileContent);
+      const documents = await getDocuments();
 
       if (!documents || documents.length === 0) {
         return {
@@ -71,11 +56,6 @@ const docuscribeProvider: McpProvider = {
       };
 
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return {
-          content: 'Document library file not found. Please add or update documents in the web UI to create it.',
-        };
-      }
       console.error('Error in getContext:', error);
       return {
         content: `An error occurred while searching your library: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -89,3 +69,5 @@ const server = createStdioMcpServer({
 });
 
 server.listen();
+*/
+console.log('MCP Server is temporarily disabled due to a package installation issue.');

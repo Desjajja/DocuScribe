@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -19,7 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { format, isValid } from 'date-fns';
 import { useRouter } from 'next/navigation';
-import { saveDocuments } from '../actions';
+import { getDocuments, updateDocument, deleteDocument, updateDocumentSchedule } from '@/app/actions';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -42,25 +42,11 @@ type ParsedSection = {
   content: string;
 };
 
-const initialDocuments: Document[] = [
-  {
-    id: 1,
-    title: 'Getting Started with React',
-    url: 'https://react.dev/learn',
-    image: 'https://placehold.co/600x400.png',
-    aiHint: 'code react',
-    content: '## Getting Started\n\nURL: https://react.dev/learn\n\nThis is an example document. Scrape a website to add real content to your library.',
-    hashtags: ['react', 'javascript', 'frontend'],
-    lastUpdated: new Date().toISOString(),
-    schedule: 'none',
-    maxPages: 5,
-  },
-];
-
 export default function LibraryPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
   const [newTitle, setNewTitle] = useState('');
@@ -69,41 +55,26 @@ export default function LibraryPage() {
   const [manageMaxPages, setManageMaxPages] = useState('5');
   const [manageSchedule, setManageSchedule] = useState<Schedule>('none');
 
-  const updateDocuments = async (newDocs: Document[]) => {
-    setDocuments(newDocs);
-    localStorage.setItem('scrapedDocuments', JSON.stringify(newDocs));
+  const loadDocuments = useCallback(async () => {
+    setIsLoading(true);
     try {
-      await saveDocuments(newDocs);
+      const docs = await getDocuments();
+      setDocuments(docs);
     } catch (error) {
+      console.error("Failed to load documents from DB", error);
       toast({
-        title: "Sync Error",
-        description: "Failed to sync document library with the server.",
+        title: "Error",
+        description: "Could not load documents from the database.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  const loadDocuments = () => {
-    try {
-      const storedDocsString = localStorage.getItem('scrapedDocuments');
-      if (storedDocsString) {
-        const storedDocs = JSON.parse(storedDocsString);
-        setDocuments(storedDocs);
-      } else {
-        updateDocuments(initialDocuments);
-      }
-    } catch (error) {
-      console.error("Failed to load documents from localStorage", error);
-      setDocuments(initialDocuments);
-    }
-  };
+  }, []);
   
   useEffect(() => {
     loadDocuments();
-    const handleStorageChange = () => { loadDocuments(); };
-    window.addEventListener('storage', handleStorageChange);
-    return () => { window.removeEventListener('storage', handleStorageChange); };
-  }, []);
+  }, [loadDocuments]);
 
   const filteredDocuments = useMemo(() => {
     if (!searchTerm) return documents;
@@ -119,19 +90,23 @@ export default function LibraryPage() {
     setNewTitle(doc.title);
   };
 
-  const handleSaveRename = () => {
+  const handleSaveRename = async () => {
     if (!editingDoc || !newTitle.trim()) return;
-    const updatedDocs = documents.map(d =>
-      d.id === editingDoc.id ? { ...d, title: newTitle.trim(), lastUpdated: new Date().toISOString() } : d
-    );
-    updateDocuments(updatedDocs);
+    const updatedDocData = { ...editingDoc, title: newTitle.trim(), lastUpdated: new Date().toISOString() };
+    
+    // We need to re-serialize the Document type to what the action expects
+    const { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = updatedDocData;
+    const updatedDoc: Document = { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages };
+
+    await updateDocument(updatedDoc);
+    await loadDocuments();
     toast({ title: "Document Renamed", description: `"${editingDoc.title}" was renamed to "${newTitle.trim()}".` });
     setEditingDoc(null);
   };
 
-  const handleDelete = (docId: number) => {
-    const updatedDocs = documents.filter(d => d.id !== docId);
-    updateDocuments(updatedDocs);
+  const handleDelete = async (docId: number) => {
+    await deleteDocument(docId);
+    await loadDocuments();
     toast({ title: "Document Deleted", description: "The document has been removed from your library." });
   };
   
@@ -162,7 +137,7 @@ export default function LibraryPage() {
     setDocToManage(null);
   };
 
-  const handleSaveSchedule = () => {
+  const handleSaveSchedule = async () => {
     if (!docToManage) return;
      const maxPagesNum = parseInt(manageMaxPages, 10);
     if (isNaN(maxPagesNum) || maxPagesNum < 1 || maxPagesNum > 50) {
@@ -173,10 +148,8 @@ export default function LibraryPage() {
       });
       return;
     }
-    const updatedDocs = documents.map(d =>
-        d.id === docToManage.id ? { ...d, schedule: manageSchedule, maxPages: maxPagesNum } : d
-    );
-    updateDocuments(updatedDocs);
+    await updateDocumentSchedule(docToManage.id, manageSchedule, maxPagesNum);
+    await loadDocuments();
     toast({
         title: "Schedule Updated",
         description: `The update schedule for "${docToManage.title}" has been set.`,
@@ -230,6 +203,27 @@ export default function LibraryPage() {
         return format(date, 'yy/MM/dd-HH:mm');
     }
     return null;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-4">
+         <header>
+          <h1 className="text-3xl font-bold tracking-tight">Documentation Library</h1>
+          <p className="text-muted-foreground">Loading your library...</p>
+        </header>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i} className="flex flex-col">
+              <div className="bg-muted h-40 w-full animate-pulse" />
+              <CardHeader><div className="bg-muted h-6 w-3/4 rounded animate-pulse" /></CardHeader>
+              <CardContent><div className="bg-muted h-16 w-full rounded animate-pulse" /></CardContent>
+              <CardFooter><div className="bg-muted h-8 w-1/2 rounded animate-pulse" /></CardFooter>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -463,4 +457,3 @@ export default function LibraryPage() {
     </div>
   );
 }
- 
