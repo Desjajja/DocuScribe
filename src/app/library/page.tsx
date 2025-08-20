@@ -144,6 +144,7 @@ export default function LibraryPage() {
       updateUrl: docToManage.url,
       updateId: docToManage.id.toString(),
       maxPages: maxPagesNum.toString(),
+      existingTitle: docToManage.title,
     });
     router.push(`/?${query.toString()}`);
     setDocToManage(null);
@@ -418,7 +419,7 @@ export default function LibraryPage() {
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
                         <span className="bg-background px-2 text-muted-foreground">
-                        And
+                        Or
                         </span>
                     </div>
                 </div>
@@ -440,10 +441,10 @@ export default function LibraryPage() {
             <DialogFooter>
                 <Button variant="outline" onClick={() => setDocToManage(null)}>Cancel</Button>
                 <div className="flex gap-2">
-                   <Button onClick={handleSaveSchedule} className="flex-grow">Save Schedule</Button>
                    <Button onClick={handleConfirmUpdateNow} variant="secondary" className="whitespace-nowrap">
                         <RefreshCw className="mr-2 h-4 w-4" /> Update Now
                    </Button>
+                   <Button onClick={handleSaveSchedule} className="flex-grow">Save Schedule</Button>
                 </div>
             </DialogFooter>
         </DialogContent>
@@ -451,3 +452,4 @@ export default function LibraryPage() {
     </div>
   );
 }
+ 

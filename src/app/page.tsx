@@ -142,11 +142,10 @@ export default function ScraperPage() {
     const updateUrl = searchParams.get('updateUrl');
     const updateId = searchParams.get('updateId');
     const maxPagesParam = searchParams.get('maxPages');
+    const existingTitleParam = searchParams.get('existingTitle');
 
     if (updateUrl && updateId && maxPagesParam && !processedUrlParams.current) {
       processedUrlParams.current = true;
-
-      const existingDoc = documents.find(d => d.id === parseInt(updateId, 10));
 
       const job: Job = {
         id: `${Date.now()}-${Math.random()}-${updateUrl}`,
@@ -158,19 +157,21 @@ export default function ScraperPage() {
         isUpdate: true,
         updateId: parseInt(updateId, 10),
         schedule: 'none', // Manual updates don't set a schedule
-        existingTitle: existingDoc?.title,
+        existingTitle: existingTitleParam || undefined,
       };
       setJobs(prev => [job, ...prev]);
       runJob(job);
       
-      router.replace('/', undefined);
+      // Use replace to remove query params from URL without adding to history
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('updateUrl');
+      newUrl.searchParams.delete('updateId');
+      newUrl.searchParams.delete('maxPages');
+      newUrl.searchParams.delete('existingTitle');
+      router.replace(newUrl.pathname + newUrl.search, { shallow: true });
     }
-    
-    if (!updateUrl && !updateId && !maxPagesParam) {
-        processedUrlParams.current = false;
-    }
-    
-  }, [searchParams, runJob, router, documents]);
+  }, [searchParams, runJob, router]);
+
 
   useEffect(() => {
     const completedJob = jobs.find(job => job.status === 'complete' && job.result);
@@ -401,3 +402,4 @@ export default function ScraperPage() {
     </div>
   );
 }
+ 
