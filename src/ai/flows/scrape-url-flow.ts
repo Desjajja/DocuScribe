@@ -176,7 +176,7 @@ const scrapeUrlFlow = ai.defineFlow(
     const results: Omit<ScrapedPage, 'image'>[] = [];
     let coverImage: string | undefined;
 
-    while (urlQueue.length > 0 && visitedUrls.size < maxPages) {
+    while (urlQueue.length > 0 && visitedUrls.size <= maxPages) {
       const currentUrl = urlQueue.shift();
       if (!currentUrl || visitedUrls.has(currentUrl)) {
         continue;
