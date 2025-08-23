@@ -14,6 +14,7 @@ import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { addDocument, getDocumentByUrl, updateDocument, getDocuments } from '@/app/actions';
+import { subscribe, getJobs as storeGetJobs, setJobs as storeSetJobs, updateJob as storeUpdateJob, clearJobs, Job as StoreJob } from '@/state/scrapeJobsStore';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -30,20 +31,7 @@ type Document = {
   maxPages: number;
 };
 
-type Job = {
-  id: string;
-  url: string;
-  maxPages: number;
-  status: 'scraping' | 'generating_hashtags' | 'complete' | 'failed';
-  progress: number;
-  message: string;
-  result?: Document;
-  error?: string;
-  isUpdate: boolean;
-  updateId?: number;
-  schedule: Schedule;
-  existingTitle?: string;
-};
+type Job = StoreJob & { result?: Document }; // extend for typed result
 
 export default function ScraperPage() {
   const router = useRouter();
@@ -51,17 +39,25 @@ export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [maxPages, setMaxPages] = useState('5');
   const [schedule, setSchedule] = useState<Schedule>('none');
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<Job[]>(() => storeGetJobs() as Job[]);
   const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
   const [updateMaxPages, setUpdateMaxPages] = useState('5');
   
   const processedUrlParams = useRef(false);
+  const LOCAL_STORAGE_KEY = 'docuscribe:scrapeJobs';
 
   const updateJob = useCallback((id: string, updates: Partial<Job>) => {
-    setJobs(prevJobs =>
-      prevJobs.map(job => (job.id === id ? { ...job, ...updates } : job))
-    );
+    storeUpdateJob(id, updates);
   }, []);
+
+  // Subscribe to global store changes
+  useEffect(() => {
+    const unsubscribe = subscribe((jobs) => setJobs(jobs as Job[]));
+    return () => { unsubscribe && unsubscribe(); };
+  }, []);
+
+  // Rehydrate jobs from localStorage on mount
+  // Remove now-unused local persistence effects (handled in store)
 
   const runJob = useCallback(async (job: Job) => {
     try {
@@ -77,19 +73,19 @@ export default function ScraperPage() {
         throw new Error("Could not find any content at the specified URL.");
       }
       
-      const compilation = results[0];
-      updateJob(job.id, { status: 'scraping', progress: 50, message: 'Content parsed successfully.' });
+  const documentation = results[0];
+  updateJob(job.id, { status: 'scraping', progress: 50, message: 'Content parsed successfully.' });
       
-      updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
-      const contentSample = compilation.content.substring(0, 4000);
-      const hashtagResult = await generateHashtags({ content: contentSample, url: compilation.url });
+  updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
+  const contentSample = documentation.content.substring(0, 4000);
+  const hashtagResult = await generateHashtags({ content: contentSample, url: documentation.url });
 
       const docData = {
-        url: compilation.url,
-        title: compilation.title,
-        content: compilation.content,
-        image: compilation.image || 'https://placehold.co/600x400.png',
-        aiHint: 'web document compilation',
+        url: documentation.url,
+        title: documentation.title,
+        content: documentation.content,
+        image: documentation.image || 'https://placehold.co/600x400.png',
+        aiHint: 'web documentation',
         hashtags: hashtagResult.hashtags,
         lastUpdated: new Date().toISOString(),
         schedule: job.schedule,
@@ -111,7 +107,7 @@ export default function ScraperPage() {
       updateJob(job.id, { 
         status: 'complete', 
         progress: 100, 
-        message: job.isUpdate ? 'Update complete!' : 'Compilation complete!',
+  message: job.isUpdate ? 'Update complete!' : 'Documentation complete!',
         result: finalDoc
       });
 
@@ -146,7 +142,7 @@ export default function ScraperPage() {
         schedule: 'none',
         existingTitle: existingTitleParam || undefined,
       };
-      setJobs(prev => [job, ...prev]);
+    storeSetJobs(prev => [job, ...prev]);
       runJob(job);
   
       router.replace('/', undefined);
@@ -158,8 +154,8 @@ export default function ScraperPage() {
     const completedJob = jobs.find(job => job.status === 'complete' && job.result);
     if (completedJob && completedJob.result) {
       toast({
-        title: completedJob.isUpdate ? "Update Complete" : "Compilation Complete",
-        description: `Successfully processed "${completedJob.result.title}". Check your library.`,
+  title: completedJob.isUpdate ? "Update Complete" : "Documentation Complete",
+  description: `Successfully processed "${completedJob.result.title}". Check your library.`,
       });
     }
 
@@ -186,7 +182,7 @@ export default function ScraperPage() {
       schedule,
       existingTitle,
     };
-    setJobs(prevJobs => [newJob, ...prevJobs]);
+  storeSetJobs(prevJobs => [newJob, ...prevJobs]);
     runJob(newJob);
   };
   
@@ -244,7 +240,7 @@ export default function ScraperPage() {
   const isScraping = jobs.some(job => job.status === 'scraping' || job.status === 'generating_hashtags');
 
   const handleClearHistory = () => {
-    setJobs([]);
+  clearJobs();
     toast({
         title: "History Cleared",
         description: "All scraping tasks have been removed.",

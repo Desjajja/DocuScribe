@@ -166,26 +166,34 @@ const scrapeUrlFlow = ai.defineFlow(
   },
   async ({ startUrl, maxPages, existingTitle }) => {
     const visitedUrls = new Set<string>();
+    // Track URLs we've already attempted (success or failure) so we don't retry them
+    const attemptedUrls = new Set<string>();
     const urlQueue: string[] = [startUrl];
     const results: Omit<ScrapedPage, 'image'>[] = [];
     let coverImage: string | undefined;
 
     while (urlQueue.length > 0 && visitedUrls.size < maxPages) {
       const currentUrl = urlQueue.shift();
-      if (!currentUrl || visitedUrls.has(currentUrl)) {
+      if (!currentUrl || attemptedUrls.has(currentUrl) || visitedUrls.has(currentUrl)) {
         continue;
       }
 
-      console.log(`Scraping page (${visitedUrls.size + 1}/${maxPages}): ${currentUrl}`);
-      visitedUrls.add(currentUrl);
+      // Mark as attempted to avoid retrying the same URL repeatedly
+      attemptedUrls.add(currentUrl);
 
       const pageData = await fetchAndProcessUrl(currentUrl);
 
+      // If fetch failed, don't count this attempt toward maxPages; continue to next queued URL
       if (!pageData) {
         continue;
       }
       
       const { title, content, html, image } = pageData;
+
+  // Now mark as visited (successful fetch)
+  visitedUrls.add(currentUrl);
+  // Human-friendly progress: show parsing document current/total (matches terminal selection format)
+  console.log(`Parsing document (${visitedUrls.size}/${maxPages}): ${currentUrl}`);
       
       // Set the cover image from the very first successfully scraped page
       if (!coverImage && image) {
@@ -199,7 +207,7 @@ const scrapeUrlFlow = ai.defineFlow(
       if (html && visitedUrls.size < maxPages) {
         const foundLinks = await findRelevantLinks({ baseUrl: currentUrl, htmlContent: html });
         for (const link of foundLinks) {
-          if (!visitedUrls.has(link) && !urlQueue.includes(link)) {
+          if (!visitedUrls.has(link) && !attemptedUrls.has(link) && !urlQueue.includes(link)) {
             urlQueue.push(link);
           }
         }
@@ -212,9 +220,9 @@ const scrapeUrlFlow = ai.defineFlow(
       .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
       .join('\n\n---\n\n');
     
-    let compilationTitle = 'Documentation Compilation';
+    let documentationTitle = 'Documentation';
     if (existingTitle) {
-      compilationTitle = existingTitle;
+      documentationTitle = existingTitle;
     } else {
       try {
         const url = new URL(startUrl);
@@ -224,28 +232,28 @@ const scrapeUrlFlow = ai.defineFlow(
         // Prefer the last path segment if it's not a generic name
         const lastPathSegment = pathSegments[pathSegments.length - 1];
         if (lastPathSegment && !/^(docs|documentation|index|home)$/i.test(lastPathSegment)) {
-            compilationTitle = lastPathSegment;
+            documentationTitle = lastPathSegment;
         } 
         // Fallback to the second to last host segment (e.g., 'react' from 'react.dev')
         else if (hostSegments.length > 1) {
-            compilationTitle = hostSegments[hostSegments.length - 2];
+            documentationTitle = hostSegments[hostSegments.length - 2];
         }
          // Further fallback to the first significant path segment
         else if (pathSegments.length > 0) {
-          compilationTitle = pathSegments[0];
+          documentationTitle = pathSegments[0];
         }
         else {
-            compilationTitle = hostSegments.join(' ');
+            documentationTitle = hostSegments.join(' ');
         }
       } catch (e) {
         // Use default title on parsing error
       }
     }
     
-    // Always return a single, aggregated document
+    // Always return a single, aggregated documentation object composed of pages
     return [{
       url: startUrl,
-      title: compilationTitle,
+      title: documentationTitle,
       content: aggregatedContent,
       image: coverImage,
     }];

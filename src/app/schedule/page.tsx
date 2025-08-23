@@ -133,7 +133,7 @@ export default function SchedulePage() {
                     onCheckedChange={(checked) => handleSelectAll(!!checked)}
                   />
                 </TableHead>
-                <TableHead>Compilation</TableHead>
+                <TableHead>Documentation</TableHead>
                 <TableHead>Schedule</TableHead>
                 <TableHead>Max Pages</TableHead>
                 <TableHead>Next Update (Est.)</TableHead>

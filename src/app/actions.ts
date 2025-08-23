@@ -78,3 +78,34 @@ export async function updateDocumentSchedule(id: number, schedule: Schedule, max
         stmt.run(schedule, id);
     }
 }
+
+// List unique documentation names (document titles) with aggregated, deduplicated hashtags
+export async function listDocumentations(limit = 100, offset = 0): Promise<Array<{ name: string; hashtags: string[] }>> {
+  const safeLimit = Math.min(Math.max(limit, 1), 1000);
+  const safeOffset = Math.max(offset, 0);
+  const rows = db.prepare('SELECT title, hashtags FROM documents LIMIT ? OFFSET ?').all(safeLimit, safeOffset) as any[];
+  const map = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const name = r.title || '';
+    let tags: string[] = [];
+    try { tags = JSON.parse(r.hashtags || '[]'); } catch { /* ignore */ }
+    if (!map.has(name)) map.set(name, new Set());
+    for (const t of tags) map.get(name)!.add(t);
+  }
+  return Array.from(map.entries()).map(([name, set]) => ({ name, hashtags: Array.from(set) }));
+}
+
+// Fetch a single document by exact documentation name (title)
+export async function getDocumentationByName(name: string): Promise<Document | null> {
+  if (!name || !name.trim()) return null;
+  // Case-insensitive exact match using COLLATE NOCASE
+  const stmt = db.prepare('SELECT * FROM documents WHERE title = ? COLLATE NOCASE LIMIT 1');
+  const row = stmt.get(name) as any;
+  if (!row) return null;
+  // Omit image from returned payload per API change request
+  const { image, hashtags, ...rest } = row;
+  return {
+    ...rest,
+    hashtags: (() => { try { return JSON.parse(hashtags || '[]'); } catch { return []; } })()
+  } as Document;
+}
