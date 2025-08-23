@@ -40,7 +40,7 @@ export async function scrapeUrl(input: ScrapeUrlInput): Promise<ScrapeUrlOutput>
 const findRelevantLinks = ai.defineTool(
   {
     name: 'findRelevantLinks',
-    description: 'Scans a webpage\'s HTML to find all on-site links. It prioritizes links with "next" or "previous" text, and falls back to all on-site links if none are found.',
+    description: 'Scans a webpage\'s HTML to find all on-site links. It prioritizes links with "next" or "previous" text, but includes all valid on-site links.',
     inputSchema: z.object({
       baseUrl: z.string().url().describe('The base URL of the page where links were found, for resolving relative paths and ensuring links are on-site.'),
       htmlContent: z.string().describe('The full HTML content of the page to parse for links.'),
@@ -56,11 +56,9 @@ const findRelevantLinks = ai.defineTool(
     const prevPatterns = /上一封|上页|上一页|上一章|前一页|上一张|prev|previous|back|older|<|‹|←|«|≪|<</i;
     const navigationPatterns = new RegExp(`${nextPatterns.source}|${prevPatterns.source}`, 'i');
     
-    let prioritizedLinks: string[] = [];
-    
-    const allLinks = $('a').map((_, el) => {
+    $('a').each((_, el) => {
         const href = $(el).attr('href');
-        if (!href) return null;
+        if (!href) return;
         
         try {
             const fullUrl = new URL(href, url.origin);
@@ -70,33 +68,14 @@ const findRelevantLinks = ai.defineTool(
             const isExternal = fullUrl.origin !== url.origin;
             const isAsset = /\.(pdf|zip|jpg|png|gif|css|js)$/i.test(fullUrl.pathname);
             
-            if (isSamePage || isExternal || isAsset) return null;
+            if (isSamePage || isExternal || isAsset) return;
 
-            return {
-              url: fullUrl.href,
-              text: $(el).text().trim(),
-            };
+            uniqueLinks.add(fullUrl.href);
+
         } catch (e) {
-            return null; // Ignore invalid URLs
+            // Ignore invalid URLs
         }
-    }).get().filter(Boolean) as { url: string; text: string }[];
-
-    // First pass: find navigation links
-    for (const link of allLinks) {
-      if (navigationPatterns.test(link.text)) {
-        prioritizedLinks.push(link.url);
-      }
-    }
-
-    // If we found some, return only those (deduplicated)
-    if (prioritizedLinks.length > 0) {
-      return Array.from(new Set(prioritizedLinks));
-    }
-    
-    // Fallback: if no navigation links, return all valid links (deduplicated)
-    for (const link of allLinks) {
-        uniqueLinks.add(link.url);
-    }
+    });
     
     return Array.from(uniqueLinks);
   }
@@ -176,7 +155,7 @@ const scrapeUrlFlow = ai.defineFlow(
     const results: Omit<ScrapedPage, 'image'>[] = [];
     let coverImage: string | undefined;
 
-    while (urlQueue.length > 0 && visitedUrls.size <= maxPages) {
+    while (urlQueue.length > 0 && visitedUrls.size < maxPages) {
       const currentUrl = urlQueue.shift();
       if (!currentUrl || visitedUrls.has(currentUrl)) {
         continue;
@@ -202,7 +181,7 @@ const scrapeUrlFlow = ai.defineFlow(
         results.push({ url: currentUrl, title, content });
       }
 
-      if (html && visitedUrls.size <= maxPages) {
+      if (html && visitedUrls.size < maxPages) {
         const foundLinks = await findRelevantLinks({ baseUrl: currentUrl, htmlContent: html });
         for (const link of foundLinks) {
           if (!visitedUrls.has(link) && !urlQueue.includes(link)) {
