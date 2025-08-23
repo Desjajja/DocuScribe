@@ -40,7 +40,7 @@ export async function scrapeUrl(input: ScrapeUrlInput): Promise<ScrapeUrlOutput>
 const findRelevantLinks = ai.defineTool(
   {
     name: 'findRelevantLinks',
-    description: 'Scans a webpage\'s HTML to find all on-site links. It prioritizes links with "next" or "previous" text, but includes all valid on-site links.',
+    description: 'Scans a webpage\'s HTML to find all on-site links. If a "next" link is found in a list, it prioritizes links from that same list.',
     inputSchema: z.object({
       baseUrl: z.string().url().describe('The base URL of the page where links were found, for resolving relative paths and ensuring links are on-site.'),
       htmlContent: z.string().describe('The full HTML content of the page to parse for links.'),
@@ -53,13 +53,10 @@ const findRelevantLinks = ai.defineTool(
     const uniqueLinks = new Set<string>();
     
     const nextPatterns = /下一封|下页|下一页|下一章|后一页|下一张|next|more|newer|лог|›|→|»|≫|>>/i;
-    const prevPatterns = /上一封|上页|上一页|上一章|前一页|上一张|prev|previous|back|older|<|‹|←|«|≪|<</i;
-    const navigationPatterns = new RegExp(`${nextPatterns.source}|${prevPatterns.source}`, 'i');
     
-    $('a').each((_, el) => {
-        const href = $(el).attr('href');
+    // Function to process and add a valid link
+    const addLink = (href: string | undefined) => {
         if (!href) return;
-        
         try {
             const fullUrl = new URL(href, url.origin);
             fullUrl.hash = ''; // Remove fragment identifiers
@@ -71,10 +68,28 @@ const findRelevantLinks = ai.defineTool(
             if (isSamePage || isExternal || isAsset) return;
 
             uniqueLinks.add(fullUrl.href);
-
         } catch (e) {
             // Ignore invalid URLs
         }
+    };
+
+    // Try to find a 'next' link and its neighbors first
+    const nextLink = $('a').filter((_, el) => nextPatterns.test($(el).text()));
+    
+    if (nextLink.length > 0) {
+        const parentList = nextLink.closest('ul, ol');
+        if (parentList.length > 0) {
+            // Found a 'next' link inside a list, prioritize all links in this list
+            parentList.find('a').each((_, el) => {
+                addLink($(el).attr('href'));
+            });
+            return Array.from(uniqueLinks);
+        }
+    }
+
+    // Fallback: If no 'next' link in a list is found, get all links
+    $('a').each((_, el) => {
+        addLink($(el).attr('href'));
     });
     
     return Array.from(uniqueLinks);
