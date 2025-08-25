@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -35,7 +35,7 @@ type Document = {
 
 type Job = StoreJob & { result?: Document }; // extend for typed result
 
-export default function ScraperPage() {
+function Scraper() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
@@ -119,7 +119,14 @@ export default function ScraperPage() {
 
       if (job.isUpdate && job.updateId) {
         const existingDoc = (await getDocuments()).find(d => d.id === job.updateId);
-        const docToUpdate: Document = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5, aiDescription: existingDoc?.aiDescription || docData.aiDescription };
+        const docToUpdate: Document = { 
+          ...docData,
+          id: job.updateId,
+          schedule: existingDoc?.schedule ?? 'none',
+          maxPages: existingDoc?.maxPages ?? 5,
+          aiDescription: existingDoc?.aiDescription || docData.aiDescription,
+          hashtags: existingDoc?.hashtags || hashtags
+        };
         await updateDocument(docToUpdate);
         finalDoc = docToUpdate;
       } else {
@@ -306,7 +313,7 @@ export default function ScraperPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="container mx-auto p-4">
       <Card className="w-full max-w-lg mx-auto">
         <form onSubmit={handleSubmit}>
           <CardHeader>
@@ -435,5 +442,13 @@ export default function ScraperPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ScraperPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <Scraper />
+    </Suspense>
   );
 }
