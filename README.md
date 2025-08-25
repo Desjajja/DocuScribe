@@ -42,6 +42,26 @@ Docuscribe is a Next.js application designed for scraping, managing, and organiz
    npm run build
    ```
 
+## Screenshots
+
+Main Panel
+
+<img width="1582" height="952" alt="image" src="https://github.com/user-attachments/assets/0169b19a-06e9-4b71-9707-8e62ddf16dc1" />
+
+
+
+Library
+
+<img width="1582" height="952" alt="image" src="https://github.com/user-attachments/assets/c849f352-6758-499b-a3d0-87bad6408117" />
+
+
+
+Scheduled Update
+
+<img width="1582" height="952" alt="image" src="https://github.com/user-attachments/assets/8d43d14d-be64-4d62-a663-669d68cfb2f1" />
+
+
+
 ## Notes
 
 - The application uses SQLite for local data storage.
