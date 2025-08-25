@@ -1,4 +1,4 @@
-# Docuscribe
+# DocuScribe
 
 Docuscribe is a Next.js application designed for scraping, managing, and organizing web documentation. It leverages AI-powered flows for tasks like hashtag generation and content parsing.
 
