@@ -77,7 +77,19 @@ export function initJobsFromStorage() {
     const raw = localStorage.getItem('docuscribe:scrapeJobs');
     if (raw) {
       const parsed = JSON.parse(raw) as Job[];
-      state.jobs = parsed;
+      // Any jobs that were mid-process in a prior session are marked interrupted
+      state.jobs = parsed.map(j => {
+        if (j.status === 'scraping' || j.status === 'generating_hashtags') {
+          return {
+            ...j,
+            status: 'failed',
+            progress: 100,
+            message: 'Interrupted in previous session',
+            error: 'Session closed before completion'
+          } as Job;
+        }
+        return j;
+      });
       notify();
     }
   } catch {}

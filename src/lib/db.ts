@@ -10,6 +10,7 @@ export type Document = {
   url: string;
   image: string;
   aiHint: string;
+  aiDescription?: string; // one-time 30-word summary generated from first 1000 tokens
   content: string;
   hashtags: string[];
   lastUpdated: string;

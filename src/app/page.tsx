@@ -25,6 +25,7 @@ type Document = {
   content: string;
   image: string;
   aiHint: string;
+  aiDescription?: string;
   hashtags: string[];
   lastUpdated: string;
   schedule: Schedule;
@@ -82,15 +83,23 @@ export default function ScraperPage() {
   const documentation = results[0];
   updateJob(job.id, { status: 'scraping', progress: 50, message: 'Content parsed successfully.' });
       
-  updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
-  const contentSample = documentation.content.substring(0, 4000);
-  // Ensure job has provider captured at execution time if missing (legacy jobs)
-  if (!job.provider) {
-    const p = getCurrentProvider();
-    updateJob(job.id, { provider: p });
-    job.provider = p;
-  }
-  const hashtagResult = await generateHashtags({ content: contentSample, url: documentation.url, provider: job.provider });
+      let hashtags: string[] = [];
+      if (!job.isUpdate) {
+        updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
+        const contentSample = documentation.content.substring(0, 4000);
+        if (!job.provider) {
+          const p = getCurrentProvider();
+          updateJob(job.id, { provider: p });
+          job.provider = p;
+        }
+        try {
+          const hashtagResult = await generateHashtags({ content: contentSample, url: documentation.url, provider: job.provider });
+          hashtags = hashtagResult.hashtags;
+        } catch (e) {
+          console.warn('[update flow] hashtag generation skipped/failure:', e);
+          hashtags = [];
+        }
+      }
 
       const docData = {
         url: documentation.url,
@@ -98,7 +107,8 @@ export default function ScraperPage() {
         content: documentation.content,
         image: documentation.image || 'https://placehold.co/600x400.png',
         aiHint: 'web documentation',
-        hashtags: hashtagResult.hashtags,
+        aiDescription: (documentation as any).aiDescription,
+  hashtags,
         lastUpdated: new Date().toISOString(),
         schedule: job.schedule,
         maxPages: job.maxPages,
@@ -108,12 +118,32 @@ export default function ScraperPage() {
 
       if (job.isUpdate && job.updateId) {
         const existingDoc = (await getDocuments()).find(d => d.id === job.updateId);
-        const docToUpdate: Document = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5 }; // Retain existing schedule on manual update
+        const docToUpdate: Document = { ...docData, id: job.updateId, schedule: existingDoc?.schedule ?? 'none', maxPages: existingDoc?.maxPages ?? 5, aiDescription: existingDoc?.aiDescription || docData.aiDescription };
         await updateDocument(docToUpdate);
         finalDoc = docToUpdate;
       } else {
-        const newId = await addDocument(docData);
-        finalDoc = { ...docData, id: newId };
+        // Guard against duplicate URL (race or user re-run without update flow)
+        const existing = await getDocumentByUrl(docData.url);
+        if (existing) {
+          const merged: Document = {
+            id: existing.id,
+            title: docData.title || existing.title,
+            url: existing.url,
+            content: docData.content, // refresh content
+            image: docData.image || existing.image,
+            aiHint: existing.aiHint || docData.aiHint,
+            aiDescription: existing.aiDescription || docData.aiDescription, // preserve existing description if present
+            hashtags: docData.hashtags.length ? docData.hashtags : existing.hashtags,
+            lastUpdated: new Date().toISOString(),
+            schedule: existing.schedule,
+            maxPages: existing.maxPages,
+          };
+          await updateDocument(merged);
+          finalDoc = merged;
+        } else {
+          const newId = await addDocument(docData);
+          finalDoc = { ...docData, id: newId };
+        }
       }
       
       updateJob(job.id, { 
@@ -251,7 +281,7 @@ export default function ScraperPage() {
     setUrl('');
   };
   
-  const isScraping = jobs.some(job => job.status === 'scraping' || job.status === 'generating_hashtags');
+  const isScraping = jobs.some(job => (job.status === 'scraping' || job.status === 'generating_hashtags') && job.progress < 100);
 
   const handleClearHistory = () => {
   clearJobs();

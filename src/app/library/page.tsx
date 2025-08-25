@@ -29,6 +29,7 @@ type Document = {
   url: string;
   image: string;
   aiHint: string;
+  aiDescription?: string;
   content: string;
   hashtags: string[];
   lastUpdated: string;
@@ -78,11 +79,15 @@ export default function LibraryPage() {
 
   const filteredDocuments = useMemo(() => {
     if (!searchTerm) return documents;
-    return documents.filter(doc =>
-      doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.hashtags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    return documents.filter(doc => {
+      const q = searchTerm.toLowerCase();
+      return (
+        doc.title.toLowerCase().includes(q) ||
+        (doc.aiDescription?.toLowerCase().includes(q) ?? false) ||
+        doc.content.toLowerCase().includes(q) ||
+        doc.hashtags.some(tag => tag.toLowerCase().includes(q))
+      );
+    });
   }, [searchTerm, documents]);
 
   const handleRename = (doc: Document) => {
@@ -95,8 +100,8 @@ export default function LibraryPage() {
     const updatedDocData = { ...editingDoc, title: newTitle.trim(), lastUpdated: new Date().toISOString() };
     
     // We need to re-serialize the Document type to what the action expects
-    const { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = updatedDocData;
-    const updatedDoc: Document = { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages };
+  const { id, title, url, image, aiHint, aiDescription, content, hashtags, lastUpdated, schedule, maxPages } = updatedDocData;
+  const updatedDoc: Document = { id, title, url, image, aiHint, aiDescription, content, hashtags, lastUpdated, schedule, maxPages };
 
     await updateDocument(updatedDoc);
     await loadDocuments();
@@ -356,11 +361,18 @@ export default function LibraryPage() {
                 <CardDescription className="text-xs truncate pt-1">{doc.url}</CardDescription>
               </CardHeader>
               <CardContent>
-                 <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['h1', 'h2', 'h3', 'h4', 'h5', 'h6']}>
-                        {doc.content.split('\n\n---\n\n')[0].split('\n').slice(3).join('\n').substring(0, 150) + '...'}
-                    </ReactMarkdown>
-                </div>
+                {doc.aiDescription ? (
+                  <div
+                    className="text-sm text-muted-foreground h-24 overflow-y-auto pr-1 leading-snug scroll-smooth"
+                    data-ai-desc
+                    role="region"
+                    aria-label="AI generated description"
+                  >
+                    {doc.aiDescription?.trim()}
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground/70" data-ai-desc-empty>No description</p>
+                )}
               </CardContent>
               <CardFooter className="flex flex-wrap gap-2 pt-2">
                   {doc.hashtags?.map(tag => (

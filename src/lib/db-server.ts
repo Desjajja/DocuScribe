@@ -21,6 +21,7 @@ db.exec(`
     url TEXT NOT NULL UNIQUE,
     image TEXT,
     aiHint TEXT,
+  aiDescription TEXT,
     content TEXT,
     hashtags TEXT,
     lastUpdated TEXT NOT NULL,
@@ -45,8 +46,12 @@ function generateUniqueShortId(dbInstance: any): string {
 try {
   const columns: Array<{ name: string }> = db.prepare(`PRAGMA table_info(documents)`).all();
   const hasDocUid = columns.some(c => c.name === 'doc_uid');
+  const hasAiDescription = columns.some(c => c.name === 'aiDescription');
   if (!hasDocUid) {
     db.exec(`ALTER TABLE documents ADD COLUMN doc_uid TEXT UNIQUE`);
+  }
+  if (!hasAiDescription) {
+    db.exec(`ALTER TABLE documents ADD COLUMN aiDescription TEXT`);
   }
   // Populate any NULL / empty / too-long legacy (UUID length > 12) doc_uid values with short ids
   const rowsToFix: Array<{ id: number }> = db.prepare(`SELECT id FROM documents WHERE doc_uid IS NULL OR doc_uid = '' OR LENGTH(doc_uid) > 12`).all();

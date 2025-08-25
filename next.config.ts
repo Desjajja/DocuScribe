@@ -35,6 +35,18 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       config.externals = [...(config.externals || []), 'better-sqlite3'];
     }
+
+    // Provide empty module stubs for optional Genkit Firebase integration & tracing if not installed/needed.
+    config.resolve = config.resolve || {};
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@genkit-ai/firebase': false, // mark as optional; prevents module not found
+    } as any;
+
+    config.plugins = config.plugins || [];
+    // Define no-op for process.env.GENKIT_TRACING to avoid dynamic import attempts
+    config.plugins.push(new (require('webpack').DefinePlugin)({ 'process.env.GENKIT_TRACING': JSON.stringify('false') }));
+
     return config;
   },
 };

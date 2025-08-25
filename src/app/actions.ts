@@ -35,17 +35,18 @@ function genUniqueShortId(): string {
 }
 
 export async function addDocument(doc: Omit<Document, 'id' | 'doc_uid'>): Promise<number> {
-  const { title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = doc;
+  const { title, url, image, aiHint, aiDescription, content, hashtags, lastUpdated, schedule, maxPages } = doc;
   const docUid = genUniqueShortId();
   const stmt = db.prepare(`
-    INSERT INTO documents (title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages, doc_uid)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO documents (title, url, image, aiHint, aiDescription, content, hashtags, lastUpdated, schedule, maxPages, doc_uid)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     title,
     url,
     image,
     aiHint,
+    aiDescription,
     content,
     JSON.stringify(hashtags),
     lastUpdated,
@@ -57,10 +58,10 @@ export async function addDocument(doc: Omit<Document, 'id' | 'doc_uid'>): Promis
 }
 
 export async function updateDocument(doc: Document): Promise<void> {
-  const { id, title, url, image, aiHint, content, hashtags, lastUpdated, schedule, maxPages } = doc;
+  const { id, title, url, image, aiHint, aiDescription, content, hashtags, lastUpdated, schedule, maxPages } = doc;
   const stmt = db.prepare(`
     UPDATE documents
-    SET title = ?, url = ?, image = ?, aiHint = ?, content = ?, hashtags = ?, lastUpdated = ?, schedule = ?, maxPages = ?
+    SET title = ?, url = ?, image = ?, aiHint = ?, aiDescription = ?, content = ?, hashtags = ?, lastUpdated = ?, schedule = ?, maxPages = ?
     WHERE id = ?
   `);
   stmt.run(
@@ -68,6 +69,7 @@ export async function updateDocument(doc: Document): Promise<void> {
     url,
     image,
     aiHint,
+    aiDescription,
     content,
     JSON.stringify(hashtags),
     lastUpdated,

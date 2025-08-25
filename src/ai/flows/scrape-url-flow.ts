@@ -26,6 +26,7 @@ const ScrapedPageSchema = z.object({
   title: z.string(),
   content: z.string(),
   image: z.string().optional(),
+  aiDescription: z.string().optional(), // optional short summary
 });
 type ScrapedPage = z.infer<typeof ScrapedPageSchema>;
 
@@ -359,7 +360,7 @@ const scrapeUrlFlow = ai.defineFlow(
     
     if (results.length === 0) return [];
 
-    const aggregatedContent = results
+  const aggregatedContent = results
       .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
       .join('\n\n---\n\n');
     
@@ -388,11 +389,92 @@ const scrapeUrlFlow = ai.defineFlow(
       } catch (e) { /* Use default title on parsing error */ }
     }
     
+  // Skip AI description on updates (existingTitle indicates an update flow)
+  const aiDescription = existingTitle ? undefined : await generateFastDescription({ aggregatedContent, resultsCount: results.length, startUrl });
+
     return [{
       url: startUrl,
       title: documentationTitle,
       content: aggregatedContent,
       image: coverImage,
+      aiDescription,
     }];
   }
 );
+
+// --- Fast AI Description Generation Utilities ---
+interface GenerateDescParams { aggregatedContent: string; resultsCount: number; startUrl: string; }
+
+async function generateFastDescription({ aggregatedContent, resultsCount, startUrl }: GenerateDescParams): Promise<string | undefined> {
+  try {
+    // 1. Sanitize & trim snippet aggressively (remove code fences & code heavy blocks)
+    let snippet = aggregatedContent
+      .replace(/```[\s\S]*?```/g, ' ')          // strip fenced code
+      .replace(/<code[\s\S]*?<\/code>/gi, ' ') // strip inline html code blocks if any
+      .replace(/\s+/g, ' ')                     // collapse whitespace
+      .trim();
+    // Limit snippet chars (approx tokens): 2500 chars (~600 tokens) to avoid long generation
+    const MAX_CHARS = 2500;
+    if (snippet.length > MAX_CHARS) snippet = snippet.slice(0, MAX_CHARS);
+
+    if (!snippet) return undefined;
+
+    // 2. Attempt lightweight AI prompt with timeout (3.5s)
+    const TIMEOUT_MS = 3500;
+    const promptFn = await getOrInitDescriptionPrompt();
+    let timedOut = false;
+    const timeoutPromise = new Promise<{ summary?: string }>(resolve => setTimeout(() => { timedOut = true; resolve({}); }, TIMEOUT_MS));
+    const aiPromise = promptFn({ snippet }).catch(err => { console.warn('[aiDescription] prompt error:', err); return { output: { summary: '' } }; });
+    const raced: any = await Promise.race([aiPromise, timeoutPromise]);
+    if (!timedOut && raced?.output?.summary) {
+      let summary = raced.output.summary.trim().replace(/\s+/g, ' ');
+      summary = summary.split(/\s+/).slice(0, 30).join(' ');
+      console.log('[aiDescription] Generated summary (', summary.length, 'chars )');
+      return summary;
+    }
+    if (timedOut) console.warn('[aiDescription] Timed out after', TIMEOUT_MS, 'ms; using heuristic fallback.');
+    // 3. Heuristic fallback
+    return heuristicDescription(snippet, resultsCount, startUrl);
+  } catch (e) {
+    console.warn('[aiDescription] failed; fallback heuristic used:', e);
+    return heuristicDescription(aggregatedContent.slice(0, 800), resultsCount, startUrl);
+  }
+}
+
+function heuristicDescription(snippet: string, resultsCount: number, startUrl: string): string {
+  // Guess primary language
+  const lower = snippet.toLowerCase();
+  let lang = 'multi-language';
+  if (/\b(async def|import\s+asyncio|def\s+\w+\()/i.test(snippet)) lang = 'python';
+  else if (/\b(function|const\s+\w+\s*=|import\s+.*from\s+'|=>)/i.test(snippet)) lang = 'javascript';
+  else if (/package\s+main|fmt\./.test(snippet)) lang = 'go';
+  else if (/fn\s+\w+\s*\(|cargo|crate::/.test(lower)) lang = 'rust';
+  else if (/public\s+class|System\.out\.println/.test(snippet)) lang = 'java';
+  else if (/#include\s+<|int\s+main\s*\(/.test(snippet)) lang = 'c/c++';
+  // Weight guess
+  const weight = resultsCount > 12 || snippet.length > 1800 ? 'feature-rich' : resultsCount > 5 ? 'moderate' : 'lightweight';
+  // Name guess from URL path
+  let nameGuess = '';
+  try {
+    const u = new URL(startUrl);
+    const segs = u.pathname.split('/').filter(Boolean);
+    nameGuess = segs[segs.length - 1] || u.hostname.split('.').slice(-2, -1)[0];
+  } catch {}
+  const base = `${nameGuess || 'library'}: ${weight} ${lang} docs`; // ~5-6 words
+  // Add a short purpose fragment from snippet first sentence
+  const sentence = snippet.split('. ')[0].replace(/[#*_`]/g,'').trim().split(/\s+/).slice(0, 18).join(' ');
+  const combined = `${base}. ${sentence}`.split(/\s+/).slice(0, 30).join(' ');
+  return combined;
+}
+
+async function getOrInitDescriptionPrompt() {
+  if (!(globalThis as any).__docDescriptionPrompt) {
+    (globalThis as any).__docDescriptionPrompt = ai.definePrompt({
+      name: 'docDescriptionPromptV2',
+      input: { schema: z.object({ snippet: z.string() }) },
+      output: { schema: z.object({ summary: z.string() }) },
+      prompt: `Summarize the documentation snippet in ONE sentence under 30 words: purpose, perceived weight (lightweight/moderate/feature-rich), and primary language(s). Output ONLY the sentence.\n\nSnippet (truncated):\n{{{snippet}}}`,
+    });
+  }
+  return (globalThis as any).__docDescriptionPrompt as (arg: { snippet: string }) => Promise<{ output: { summary: string } }>;
+}
