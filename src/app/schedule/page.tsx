@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScheduleSelect } from '@/components/schedule/schedule-select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Label } from '@/components/ui/label';
@@ -13,16 +13,10 @@ import { MoreHorizontal, CalendarClock, Ban } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { getDocuments, updateDocumentSchedule } from '@/app/actions';
+import type { Schedule, Document as FullDocument } from '@/lib/db';
 
-type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
-
-type Document = {
-  id: number;
-  title: string;
-  url: string;
-  schedule: Schedule;
-  maxPages: number;
-};
+// Narrowed document shape used on this page.
+type Document = Pick<FullDocument, 'id' | 'title' | 'url' | 'schedule' | 'maxPages'>;
 
 export default function SchedulePage() {
   const [allDocuments, setAllDocuments] = useState<Document[]>([]);
@@ -34,8 +28,9 @@ export default function SchedulePage() {
   const loadDocuments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const docs = await getDocuments();
-      setAllDocuments(docs.map(({id, title, url, schedule, maxPages}) => ({id, title, url, schedule, maxPages})));
+  const docs = await getDocuments();
+  const minimal: Document[] = docs.map(d => ({ id: d.id, title: d.title, url: d.url, schedule: d.schedule, maxPages: d.maxPages }));
+  setAllDocuments(minimal);
     } catch (error) {
       console.error("Failed to load documents from DB", error);
       toast({
@@ -199,20 +194,10 @@ export default function SchedulePage() {
                     Apply a new update schedule to the {selectedDocs.size} selected document(s).
                 </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
-                <Label htmlFor="edit-schedule">New Schedule</Label>
-                <Select value={editSchedule} onValueChange={(value: Schedule) => setEditSchedule(value)}>
-                    <SelectTrigger id="edit-schedule">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="none">None (Cancel)</SelectItem>
-                        <SelectItem value="daily">Daily</SelectItem>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+      <div className="py-4 space-y-2">
+        <Label htmlFor="edit-schedule">New Schedule</Label>
+        <ScheduleSelect id="edit-schedule" value={editSchedule} onChange={setEditSchedule} noneLabel="None (Cancel)" />
+      </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
                 <Button onClick={handleApplyEdit}>Apply to All</Button>

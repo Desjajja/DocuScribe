@@ -1,10 +1,7 @@
 import * as cheerio from 'cheerio';
-
-// This is sample HTML with real neighboring pages (actual FastAPI docs structure)
-const sampleHtml = `
 import { findSuccessorPages } from '../src/ai/flows/scrape-url-flow';
 
-// This is sample HTML with real neighboring pages (actual FastAPI docs structure)
+// Sample HTML (FastAPI docs like)
 const sampleHtml = `<html>
   <body>
     <nav class="docs-nav">
@@ -32,14 +29,14 @@ async function testSuccessorPages() {
   const baseUrl = 'https://fastapi.tiangolo.com/';
   
   try {
-    const successorLinks = await findSuccessorPages.run({
+  const successorLinksResult = await findSuccessorPages.run({
       baseUrl: baseUrl,
       htmlContent: sampleHtml,
     });
-    
-    console.log('--- Final Result ---');
-    console.log(`Found ${successorLinks.length} successor pages:`);
-    successorLinks.forEach((link, i) => console.log(`  ${i+1}. ${link}`));
+  const successorLinks = Array.isArray(successorLinksResult) ? successorLinksResult : [];
+  console.log('--- Final Result ---');
+  console.log(`Found ${successorLinks.length} successor pages:`);
+  successorLinks.forEach((link: string, i: number) => console.log(`  ${i+1}. ${link}`));
     console.log('--- Test Complete ---');
     
   } catch (error) {
@@ -50,7 +47,6 @@ async function testSuccessorPages() {
 
 // Execute the test function
 testSuccessorPages();
-`;
 
 // Recreate the logic from findRelevantLinks to test it standalone
 function testFindRelevantLinks(baseUrl: string, htmlContent: string, maxPages: number = 5): string[] {

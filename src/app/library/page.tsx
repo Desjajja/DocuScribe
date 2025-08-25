@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from '@/components/ui/label';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScheduleSelect } from '@/components/schedule/schedule-select';
 import { Search, MoreVertical, Edit, Trash2, Download, RefreshCw, CalendarClock } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from '@/hooks/use-toast';
@@ -20,28 +20,8 @@ import remarkGfm from 'remark-gfm';
 import { format, isValid } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { getDocuments, updateDocument, deleteDocument, updateDocumentSchedule } from '@/app/actions';
-
-type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
-
-type Document = {
-  id: number;
-  title: string;
-  url: string;
-  image: string;
-  aiHint: string;
-  aiDescription?: string;
-  content: string;
-  hashtags: string[];
-  lastUpdated: string;
-  schedule: Schedule;
-  maxPages: number;
-};
-
-type ParsedSection = {
-  title: string;
-  url: string;
-  content: string;
-};
+import type { Document, Schedule } from '@/lib/db';
+import { parseContentToSections } from '@/lib/content';
 
 export default function LibraryPage() {
   const router = useRouter();
@@ -176,19 +156,6 @@ export default function LibraryPage() {
     toast({ title: "Exported to Markdown", description: `Downloaded as ${filename}` });
   };
 
-  const parseContentToSections = (content: string): ParsedSection[] => {
-    const sections = content.split('\n\n---\n\n');
-    return sections.map(sectionText => {
-      const lines = sectionText.split('\n');
-      const titleMatch = lines[0]?.match(/^## (.*)/);
-      const title = titleMatch ? titleMatch[1] : 'Content';
-      const urlMatch = lines[1]?.match(/^URL: (.*)/);
-      const url = urlMatch ? urlMatch[1] : '';
-      const sectionContent = lines.slice(3).join('\n');
-      return { title, url, content: sectionContent };
-    });
-  };
-  
   useEffect(() => {
     if (editingDoc) {
       setTimeout(() => renameInputRef.current?.focus(), 100);
@@ -442,17 +409,7 @@ export default function LibraryPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="schedule">Update Schedule</Label>
-                  <Select value={manageSchedule} onValueChange={(value: Schedule) => setManageSchedule(value)}>
-                    <SelectTrigger id="schedule">
-                      <SelectValue placeholder="No schedule" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <ScheduleSelect value={manageSchedule} onChange={setManageSchedule} noneLabel="None" />
                 </div>
             </div>
             <DialogFooter>

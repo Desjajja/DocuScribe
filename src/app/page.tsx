@@ -12,26 +12,11 @@ import { toast } from "@/hooks/use-toast";
 import { Loader2, Globe, CheckCircle, XCircle, Trash2 } from "lucide-react";
 import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { addDocument, getDocumentByUrl, updateDocument, getDocuments } from '@/app/actions';
-import { replaceDocumentPages, getDocumentationById } from '@/app/actions';
+import { ScheduleSelect } from '@/components/schedule/schedule-select';
+import { addDocument, getDocumentByUrl, updateDocument, getDocuments, replaceDocumentPages } from '@/app/actions';
 import { subscribe, getJobs as storeGetJobs, setJobs as storeSetJobs, updateJob as storeUpdateJob, clearJobs, Job as StoreJob, initJobsFromStorage } from '@/state/scrapeJobsStore';
 
-type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
-
-type Document = {
-  id: number;
-  title: string;
-  url:string;
-  content: string;
-  image: string;
-  aiHint: string;
-  aiDescription?: string;
-  hashtags: string[];
-  lastUpdated: string;
-  schedule: Schedule;
-  maxPages: number;
-};
+import type { Document, Schedule } from '@/lib/db';
 
 type Job = StoreJob & { result?: Document }; // extend for typed result
 
@@ -115,7 +100,7 @@ function Scraper() {
         maxPages: job.maxPages,
       };
 
-      let finalDoc: Document;
+  let finalDoc: Document;
 
       if (job.isUpdate && job.updateId) {
         const existingDoc = (await getDocuments()).find(d => d.id === job.updateId);
@@ -353,17 +338,7 @@ function Scraper() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="schedule">Schedule Updates</Label>
-                <Select value={schedule} onValueChange={(value: Schedule) => setSchedule(value)}>
-                  <SelectTrigger id="schedule">
-                    <SelectValue placeholder="No schedule" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
+                <ScheduleSelect value={schedule} onChange={setSchedule} noneLabel="No schedule" />
               </div>
             </div>
           </CardContent>
