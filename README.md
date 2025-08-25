@@ -2,6 +2,8 @@
 
 Docuscribe is a Next.js application designed for scraping, managing, and organizing web documentation. It leverages AI-powered flows for tasks like hashtag generation and content parsing.
 
+I also write a MCP server for it to release its full power in vibe coding: see [docuscribe-mcp-server](https://github.com/Desjajja/docuscribe-mcp-server
+)
 ## Features
 
 - **Web Scraping**: Extracts documentation from websites, following links to compile structured content.
