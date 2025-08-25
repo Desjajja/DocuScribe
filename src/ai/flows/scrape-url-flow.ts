@@ -70,6 +70,7 @@ export const findSuccessorPages = ai.defineTool(
 
             if (isSamePage || isExternal || isAsset) return null;
 
+            console.log(`  [+] Found potential successor: ${normalizedHref} (Reason: ${reason})`);
             return normalizedHref;
         } catch (e) {
             return null;
@@ -86,8 +87,18 @@ export const findSuccessorPages = ai.defineTool(
             if (link) successorLinks.add(link);
         });
     }
+
+    const exactTextPattern = /^next$/i;
+    $('a').each((_, el) => {
+        const text = $(el).text().trim();
+        if (exactTextPattern.test(text)) {
+            const link = processCandidate(el, `exact text match '${text}'`);
+            if (link) successorLinks.add(link);
+        }
+    });
     
     if (successorLinks.size === 0) {
+        console.log("Primary policy failed. Switching to navigation menu analysis.");
         const navContainers = $('nav, #site-nav, .site-nav, #sidebar, .sidebar');
         const allNavLinks = navContainers.find('a');
         let currentPageFound = false;
@@ -113,6 +124,12 @@ export const findSuccessorPages = ai.defineTool(
         });
     }
 
+    if (successorLinks.size > 0) {
+        console.log(`Found ${successorLinks.size} successor(s) for ${baseUrl}.`);
+    } else {
+        console.log(`No successors found for ${baseUrl}.`);
+    }
+
     return Array.from(successorLinks);
   }
 );
@@ -131,11 +148,62 @@ async function fetchAndProcessUrl(url: string): Promise<FetchResult> {
     }
     const html = await response.text();
     const $ = cheerio.load(html);
-
+    // Turndown with custom formatting adjustments
     const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+    // Unescape underscores so they retain markdown meaning (avoid literal \_)
+    const originalEscape = turndownService.escape.bind(turndownService);
+    turndownService.escape = (str: string) => {
+      // Use original escaping, then unescape underscores & backticks so identifiers remain readable.
+      return originalEscape(str)
+        .replace(/\\_/g, '_')
+        .replace(/\\`/g, '`');
+    };
+    // Preserve <br> as explicit line breaks (two trailing spaces markdown style)
+    turndownService.addRule('lineBreak', {
+      filter: 'br',
+      replacement: () => '  \n'
+    });
+    // Preserve pre > code blocks verbatim with fenced blocks
+    turndownService.addRule('fencedCodeBlock', {
+      filter: (node) => {
+        return (
+          node.nodeName === 'PRE' &&
+          node.firstChild !== null &&
+          (node.firstChild as any).nodeName === 'CODE'
+        );
+      },
+      replacement: (_content, node) => {
+        const codeNode = (node.firstChild as any);
+        const codeText = codeNode.textContent || '';
+        // Detect language from class attribute e.g. language-python, lang-js, or highlight-source-python
+        const classAttr: string = (codeNode.getAttribute && codeNode.getAttribute('class')) || '';
+        let lang = '';
+        if (classAttr) {
+          const match = classAttr.match(/(?:language|lang|highlight-source)-([a-zA-Z0-9_+-]+)/);
+            if (match) lang = match[1].toLowerCase();
+        }
+        // Preserve tabs & spaces exactly; only normalize non-breaking spaces to regular spaces.
+        const normalized = codeText.replace(/\u00A0/g, ' ');
+        return `\n\n\`\`\`${lang}\n${normalized}\n\`\`\`\n\n`;
+      }
+    });
+    // Generic <pre> block (without nested <code>) handling — some highlighters emit spans directly under <pre>
+    turndownService.addRule('plainPreBlock', {
+      filter: (node) => node.nodeName === 'PRE' && !(node.firstChild && (node.firstChild as any).nodeName === 'CODE'),
+      replacement: (_content, node) => {
+        // Extract raw text preserving whitespace. Using textContent keeps indentation spans.
+        const raw = (node as any).textContent || '';
+        const classAttr: string = ((node as any).getAttribute && (node as any).getAttribute('class')) || '';
+        let lang = '';
+        if (classAttr) {
+          const match = classAttr.match(/(?:language|lang|highlight-source)-([a-zA-Z0-9_+-]+)/);
+          if (match) lang = match[1].toLowerCase();
+        }
+        const normalized = raw.replace(/\u00A0/g, ' ');
+        return `\n\n\`\`\`${lang}\n${normalized}\n\`\`\`\n\n`;
+      }
+    });
     
-    $('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], form, aside').remove();
-
     const title = $('title').first().text() || $('h1').first().text() || 'Untitled';
     
     let firstImageDataUri: string | undefined;
@@ -156,17 +224,76 @@ async function fetchAndProcessUrl(url: string): Promise<FetchResult> {
         }
     }
     
-    const contentHtml = $('main').html() || $('article').html() || $('body').html();
-    if (!contentHtml) {
-        return { status: 'failure', reason: 'Main content not found' };
+    // **IMPROVED LOGIC**: Actively find the main content container first.
+    const contentSelectors = [
+        '[role="main"]',
+        'main',
+        '.main-content',
+        '#main-content',
+        '.body',
+        'article',
+        '#content',
+        '.content',
+    ];
+
+    let $content: cheerio.Cheerio | null = null;
+    for (const selector of contentSelectors) {
+      const el = $(selector);
+      if (el.length > 0) {
+        $content = el.first();
+        break;
+      }
     }
 
-    const content = turndownService.turndown(contentHtml);
+    // If no specific container was found, fallback to the whole body.
+    if (!$content) {
+      $content = $('body');
+    }
+    
+    // Now, remove any nested unwanted elements from within that container.
+    const selectorsToRemove = [
+      'header', 'footer', 'nav', 'aside', 'script', 'style', '.noprint',
+      '.header', '.footer', '.sidebar', '.menu', '.copyright', '.navigation', '.related-links', '.mobile-nav', '.sphinxsidebar',
+      '[role="banner"]', '[role="contentinfo"]', '[role="navigation"]', '[aria-hidden="true"]',
+    ].join(', ');
+    $content.find(selectorsToRemove).remove();
+    
+    const contentHtml = $content.html();
+    if (!contentHtml) {
+        return { status: 'failure', reason: 'Main content not found after cleaning' };
+    }
+
+    // Convert HTML -> Markdown
+    let content = turndownService.turndown(contentHtml);
+    content = postProcessMarkdown(content);
     
     return { status: 'success', data: { title, content, html, image: firstImageDataUri }};
   } catch (error: any) {
     return { status: 'failure', reason: error.message };
   }
+}
+
+// Post-process markdown to normalize spacing/newlines & undo unwanted escapes
+function postProcessMarkdown(md: string): string {
+  // Split by fenced code blocks to avoid altering indentation or spacing inside them
+  const segments = md.split(/(```[\s\S]*?```)/g);
+  return segments.map(seg => {
+    if (seg.startsWith('```')) {
+      // Within fenced code blocks, remove any markdown escape backslashes before non-formatting chars
+      return seg.replace(/\\(_|\*|`)/g, '$1');
+    }
+    return seg
+      // Normalize non‑breaking spaces
+      .replace(/\u00A0/g, ' ')
+      // Collapse 3+ blank lines into at most 2
+      .replace(/\n{3,}/g, '\n\n')
+      // Trim trailing spaces on lines (except two spaces used for <br>)
+      .replace(/(^|[^ ]) {3,}$/gm, (m) => m.trimEnd())
+      // Ensure a blank line before fenced code blocks (improves rendering)
+      .replace(/([^\n])\n```/g, '$1\n\n```')
+      // Remove stray backslash before underscores
+      .replace(/\\_/g, '_');
+  }).join('');
 }
 
 // Main Genkit Flow
@@ -183,7 +310,6 @@ const scrapeUrlFlow = ai.defineFlow(
     const results: Omit<ScrapedPage, 'image'>[] = [];
     let coverImage: string | undefined;
     
-    // Logging state
     const failures: { url: string, reason: string }[] = [];
     const startTime = Date.now();
     console.log(`Starting scrape at: ${startUrl}`);
