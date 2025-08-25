@@ -14,7 +14,7 @@ import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { addDocument, getDocumentByUrl, updateDocument, getDocuments } from '@/app/actions';
-import { subscribe, getJobs as storeGetJobs, setJobs as storeSetJobs, updateJob as storeUpdateJob, clearJobs, Job as StoreJob } from '@/state/scrapeJobsStore';
+import { subscribe, getJobs as storeGetJobs, setJobs as storeSetJobs, updateJob as storeUpdateJob, clearJobs, Job as StoreJob, initJobsFromStorage } from '@/state/scrapeJobsStore';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
@@ -39,6 +39,10 @@ export default function ScraperPage() {
   const [url, setUrl] = useState('');
   const [maxPages, setMaxPages] = useState('5');
   const [schedule, setSchedule] = useState<Schedule>('none');
+  // Helper to fetch current provider (global config) on demand
+  const getCurrentProvider = () => {
+    try { return localStorage.getItem('docuscribe:provider') || 'gemini'; } catch { return 'gemini'; }
+  };
   const [jobs, setJobs] = useState<Job[]>(() => storeGetJobs() as Job[]);
   const [docToUpdate, setDocToUpdate] = useState<Document | null>(null);
   const [updateMaxPages, setUpdateMaxPages] = useState('5');
@@ -52,6 +56,8 @@ export default function ScraperPage() {
 
   // Subscribe to global store changes
   useEffect(() => {
+  // Initialize jobs from storage only after client mounts to avoid hydration diff
+  initJobsFromStorage();
     const unsubscribe = subscribe((jobs) => setJobs(jobs as Job[]));
     return () => { unsubscribe && unsubscribe(); };
   }, []);
@@ -78,7 +84,13 @@ export default function ScraperPage() {
       
   updateJob(job.id, { status: 'generating_hashtags', progress: 75, message: 'Generating AI hashtags...' });
   const contentSample = documentation.content.substring(0, 4000);
-  const hashtagResult = await generateHashtags({ content: contentSample, url: documentation.url });
+  // Ensure job has provider captured at execution time if missing (legacy jobs)
+  if (!job.provider) {
+    const p = getCurrentProvider();
+    updateJob(job.id, { provider: p });
+    job.provider = p;
+  }
+  const hashtagResult = await generateHashtags({ content: contentSample, url: documentation.url, provider: job.provider });
 
       const docData = {
         url: documentation.url,
@@ -141,6 +153,7 @@ export default function ScraperPage() {
         updateId: parseInt(updateId, 10),
         schedule: 'none',
         existingTitle: existingTitleParam || undefined,
+        provider: getCurrentProvider(),
       };
     storeSetJobs(prev => [job, ...prev]);
       runJob(job);
@@ -181,6 +194,7 @@ export default function ScraperPage() {
       updateId,
       schedule,
       existingTitle,
+      provider: getCurrentProvider(),
     };
   storeSetJobs(prevJobs => [newJob, ...prevJobs]);
     runJob(newJob);

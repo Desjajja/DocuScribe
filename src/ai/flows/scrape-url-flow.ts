@@ -1,8 +1,9 @@
 'use server';
 /**
- * @fileOverview A flow to recursively scrape a website from a starting URL and compile the content.
+ * @fileOverview A flow to recursively scrape a website from a starting URL and compile successor pages.
  *
  * - scrapeUrl - The main function to initiate the scraping process.
+ * - findSuccessorPages - Finds all successor/child pages in a sequential chain.
  * - ScrapeUrlInput - Input type for the scrapeUrl function.
  * - ScrapeUrlOutput - Output type for the scrapeUrl function.
  */
@@ -36,89 +37,107 @@ export async function scrapeUrl(input: ScrapeUrlInput): Promise<ScrapeUrlOutput>
   return scrapeUrlFlow(input);
 }
 
-// Genkit Tool: Find and filter links on a page
-const findRelevantLinks = ai.defineTool(
+// Genkit Tool: Find successor pages in a sequential chain
+export const findSuccessorPages = ai.defineTool(
   {
-    name: 'findRelevantLinks',
-    description: 'Scans a webpage\'s HTML to find all on-site links. If a "next" link is found in a list, it prioritizes links from that same list.',
+    name: 'findSuccessorPages',
+    description: 'Scans a webpage to find all successor/child pages in a sequential chain. Looks for links with "next" text patterns or URLs that hint at sequential progression.',
     inputSchema: z.object({
-      baseUrl: z.string().url().describe('The base URL of the page where links were found, for resolving relative paths and ensuring links are on-site.'),
-      htmlContent: z.string().describe('The full HTML content of the page to parse for links.'),
+      baseUrl: z.string().url().describe('The base URL of the page to find successors for.'),
+      htmlContent: z.string().describe('The full HTML content of the page to parse for successor links.'),
     }),
-    outputSchema: z.array(z.string().url().describe('An array of absolute URLs found on the page that are valid for further scraping.')),
+    outputSchema: z.array(z.string().url().describe('An array of absolute URLs that are successors to the current page.')),
   },
   async ({ baseUrl, htmlContent }) => {
     const $ = cheerio.load(htmlContent);
-    const url = new URL(baseUrl);
-    const uniqueLinks = new Set<string>();
-    
-    const nextPatterns = /下一封|下页|下一页|下一章|后一页|下一张|next|more|newer|лог|›|→|»|≫|>>/i;
-    
-    // Function to process and add a valid link
-    const addLink = (href: string | undefined) => {
-        if (!href) return;
+    const baseOrigin = new URL(baseUrl).origin;
+    const successorLinks = new Set<string>();
+
+    const processCandidate = (el: cheerio.Element, reason: string): string | null => {
+        const $el = $(el);
+        const href = $el.attr('href');
+        if (!href || $el.attr('hreflang')) return null;
+
         try {
-            const fullUrl = new URL(href, url.origin);
-            fullUrl.hash = ''; // Remove fragment identifiers
-
-            const isSamePage = fullUrl.href === baseUrl;
-            const isExternal = fullUrl.origin !== url.origin;
-            const isAsset = /\.(pdf|zip|jpg|png|gif|css|js)$/i.test(fullUrl.pathname);
+            const fullUrl = new URL(href, baseUrl);
+            fullUrl.hash = '';
+            fullUrl.search = '';
+            const normalizedHref = fullUrl.href;
             
-            if (isSamePage || isExternal || isAsset) return;
+            const isSamePage = normalizedHref === baseUrl;
+            const isExternal = fullUrl.origin !== baseOrigin;
+            const isAsset = /\.(pdf|zip|jpg|png|gif|css|js|ico|svg)$/i.test(fullUrl.pathname);
 
-            uniqueLinks.add(fullUrl.href);
+            if (isSamePage || isExternal || isAsset) return null;
+
+            return normalizedHref;
         } catch (e) {
-            // Ignore invalid URLs
+            return null;
         }
     };
 
-    // Try to find a 'next' link and its neighbors first
-    const nextLink = $('a').filter((_, el) => nextPatterns.test($(el).text()));
+    const highConfidenceSelectors = [
+        'a[rel="next"]', 'a.md-footer__link--next',
+        'a[class*="next"]', 'a[aria-label*="next" i]',
+    ];
+    for (const selector of highConfidenceSelectors) {
+        $(selector).each((_, el) => {
+            const link = processCandidate(el, `selector '${selector}'`);
+            if (link) successorLinks.add(link);
+        });
+    }
     
-    if (nextLink.length > 0) {
-        const parentList = nextLink.closest('ul, ol');
-        if (parentList.length > 0) {
-            // Found a 'next' link inside a list, prioritize all links in this list
-            parentList.find('a').each((_, el) => {
-                addLink($(el).attr('href'));
-            });
-            return Array.from(uniqueLinks);
-        }
+    if (successorLinks.size === 0) {
+        const navContainers = $('nav, #site-nav, .site-nav, #sidebar, .sidebar');
+        const allNavLinks = navContainers.find('a');
+        let currentPageFound = false;
+        
+        allNavLinks.each((_, el) => {
+            if (currentPageFound) {
+                const link = processCandidate(el, 'next in nav order');
+                if (link) {
+                    successorLinks.add(link);
+                    return false;
+                }
+            } else {
+                try {
+                    const href = $(el).attr('href');
+                    if (href) {
+                        const resolvedUrl = new URL(href, baseUrl);
+                        if (resolvedUrl.pathname === new URL(baseUrl).pathname) {
+                            currentPageFound = true;
+                        }
+                    }
+                } catch(e) { /* ignore invalid hrefs */ }
+            }
+        });
     }
 
-    // Fallback: If no 'next' link in a list is found, get all links
-    $('a').each((_, el) => {
-        addLink($(el).attr('href'));
-    });
-    
-    return Array.from(uniqueLinks);
+    return Array.from(successorLinks);
   }
 );
 
+
 // Helper function to fetch and process a single URL
-async function fetchAndProcessUrl(url: string): Promise<{ title: string; content: string; html: string; image?: string } | null> {
+type FetchResult = 
+  | { status: 'success'; data: { title: string; content: string; html: string; image?: string } }
+  | { status: 'failure'; reason: string };
+
+async function fetchAndProcessUrl(url: string): Promise<FetchResult> {
   try {
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!response.ok) {
-        console.warn(`Skipping ${url}: Failed to fetch with status ${response.status}`);
-        return null; // Return null to indicate failure
+        return { status: 'failure', reason: `HTTP ${response.status}` };
     }
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Initialize Turndown service to convert HTML to Markdown
-    const turndownService = new TurndownService({
-        headingStyle: 'atx',
-        codeBlockStyle: 'fenced',
-    });
+    const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
     
-    // Remove non-content elements before processing
     $('nav, header, footer, script, style, noscript, svg, [aria-hidden="true"], form, aside').remove();
 
     const title = $('title').first().text() || $('h1').first().text() || 'Untitled';
     
-    // Find the first image, download it, and convert to data URI
     let firstImageDataUri: string | undefined;
     const firstImg = $('img').first();
     if (firstImg.length > 0) {
@@ -133,27 +152,20 @@ async function fetchAndProcessUrl(url: string): Promise<{ title: string; content
                     const base64 = Buffer.from(buffer).toString('base64');
                     firstImageDataUri = `data:${contentType};base64,${base64}`;
                 }
-            } catch (e) {
-                console.error(`Failed to process image from ${src}:`, e);
-                // Ignore invalid image URLs or download failures
-            }
+            } catch (e) { /* Ignore image processing errors */ }
         }
     }
     
-    // Select the main content area, falling back to the body
-    let contentHtml = $('main').html() || $('article').html() || $('body').html();
-
+    const contentHtml = $('main').html() || $('article').html() || $('body').html();
     if (!contentHtml) {
-        return null;
+        return { status: 'failure', reason: 'Main content not found' };
     }
 
-    // Convert the selected HTML to Markdown to preserve formatting
     const content = turndownService.turndown(contentHtml);
     
-    return { title, content, html, image: firstImageDataUri };
-  } catch (error) {
-    console.error(`Error processing ${url}:`, error);
-    return null;
+    return { status: 'success', data: { title, content, html, image: firstImageDataUri }};
+  } catch (error: any) {
+    return { status: 'failure', reason: error.message };
   }
 }
 
@@ -166,54 +178,59 @@ const scrapeUrlFlow = ai.defineFlow(
   },
   async ({ startUrl, maxPages, existingTitle }) => {
     const visitedUrls = new Set<string>();
-    // Track URLs we've already attempted (success or failure) so we don't retry them
     const attemptedUrls = new Set<string>();
     const urlQueue: string[] = [startUrl];
     const results: Omit<ScrapedPage, 'image'>[] = [];
     let coverImage: string | undefined;
+    
+    // Logging state
+    const failures: { url: string, reason: string }[] = [];
+    const startTime = Date.now();
+    console.log(`Starting scrape at: ${startUrl}`);
 
     while (urlQueue.length > 0 && visitedUrls.size < maxPages) {
       const currentUrl = urlQueue.shift();
-      if (!currentUrl || attemptedUrls.has(currentUrl) || visitedUrls.has(currentUrl)) {
+      if (!currentUrl || attemptedUrls.has(currentUrl)) {
         continue;
       }
 
-      // Mark as attempted to avoid retrying the same URL repeatedly
       attemptedUrls.add(currentUrl);
+      const result = await fetchAndProcessUrl(currentUrl);
 
-      const pageData = await fetchAndProcessUrl(currentUrl);
+      if (result.status === 'success') {
+        visitedUrls.add(currentUrl);
+        console.log(`[${visitedUrls.size}] ✅ Retrieved: ${currentUrl}`);
 
-      // If fetch failed, don't count this attempt toward maxPages; continue to next queued URL
-      if (!pageData) {
-        continue;
-      }
-      
-      const { title, content, html, image } = pageData;
+        const { title, content, html, image } = result.data;
+        if (!coverImage && image) coverImage = image;
+        if (content) results.push({ url: currentUrl, title, content });
 
-  // Now mark as visited (successful fetch)
-  visitedUrls.add(currentUrl);
-  // Human-friendly progress: show parsing document current/total (matches terminal selection format)
-  console.log(`Parsing document (${visitedUrls.size}/${maxPages}): ${currentUrl}`);
-      
-      // Set the cover image from the very first successfully scraped page
-      if (!coverImage && image) {
-          coverImage = image;
-      }
-
-      if (content) {
-        results.push({ url: currentUrl, title, content });
-      }
-
-      if (html && visitedUrls.size < maxPages) {
-        const foundLinks = await findRelevantLinks({ baseUrl: currentUrl, htmlContent: html });
-        for (const link of foundLinks) {
-          if (!visitedUrls.has(link) && !attemptedUrls.has(link) && !urlQueue.includes(link)) {
-            urlQueue.push(link);
+        if (visitedUrls.size < maxPages) {
+          const successorLinks = await findSuccessorPages({ baseUrl: currentUrl, htmlContent: html });
+          for (const link of successorLinks) {
+            if (!attemptedUrls.has(link) && !urlQueue.includes(link)) {
+              urlQueue.push(link);
+            }
           }
         }
+      } else {
+        console.log(`[x] ❌ Failed: ${currentUrl} (${result.reason})`);
+        failures.push({ url: currentUrl, reason: result.reason });
       }
     }
 
+    // --- Final Summary ---
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log('\n--- Scraping Summary ---');
+    console.log(`Completed in ${duration} seconds.`);
+    console.log(`✅ Success: ${results.length}`);
+    console.log(`❌ Failed:  ${failures.length}`);
+    if (failures.length > 0) {
+        console.log('\nFailed URLs:');
+        failures.forEach(f => console.log(`  - ${f.url} (${f.reason})`));
+    }
+    console.log('------------------------\n');
+    
     if (results.length === 0) return [];
 
     const aggregatedContent = results
@@ -229,28 +246,22 @@ const scrapeUrlFlow = ai.defineFlow(
         const pathSegments = url.pathname.split('/').filter(s => s);
         const hostSegments = url.hostname.split('.').filter(s => s !== 'www');
         
-        // Prefer the last path segment if it's not a generic name
         const lastPathSegment = pathSegments[pathSegments.length - 1];
         if (lastPathSegment && !/^(docs|documentation|index|home)$/i.test(lastPathSegment)) {
             documentationTitle = lastPathSegment;
         } 
-        // Fallback to the second to last host segment (e.g., 'react' from 'react.dev')
         else if (hostSegments.length > 1) {
             documentationTitle = hostSegments[hostSegments.length - 2];
         }
-         // Further fallback to the first significant path segment
         else if (pathSegments.length > 0) {
           documentationTitle = pathSegments[0];
         }
         else {
             documentationTitle = hostSegments.join(' ');
         }
-      } catch (e) {
-        // Use default title on parsing error
-      }
+      } catch (e) { /* Use default title on parsing error */ }
     }
     
-    // Always return a single, aggregated documentation object composed of pages
     return [{
       url: startUrl,
       title: documentationTitle,

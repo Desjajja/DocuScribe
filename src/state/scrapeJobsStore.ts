@@ -24,6 +24,7 @@ export interface Job {
   updateId?: number;
   schedule: Schedule;
   existingTitle?: string;
+  provider?: string; // AI provider key (e.g., 'gemini', 'deepseek')
 }
 
 type Listener = (jobs: Job[]) => void;
@@ -68,14 +69,16 @@ export function updateJob(id: string, updates: Partial<Job>) {
   setJobs(prev => prev.map(j => (j.id === id ? { ...j, ...updates } : j)));
 }
 
-// Rehydrate from localStorage (called once on first import in browser)
-if (typeof window !== 'undefined') {
+let initialized = false;
+export function initJobsFromStorage() {
+  if (initialized || typeof window === 'undefined') return;
+  initialized = true;
   try {
     const raw = localStorage.getItem('docuscribe:scrapeJobs');
     if (raw) {
       const parsed = JSON.parse(raw) as Job[];
-      // Leave in-progress statuses as-is (they won't auto-resume, but user sees last snapshot)
       state.jobs = parsed;
+      notify();
     }
   } catch {}
 }

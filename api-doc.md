@@ -1,11 +1,11 @@
 # Docuscribe API Documentation
 
-## 1. List Documentations
+## 1. List All Documents (list_all_docs)
 
-**Endpoint:** `GET /api/documentations`
+**Endpoint:** `GET /api/list_all_docs`
 
 **Description:**
-Returns a list of all unique documentation names (document titles) and their aggregated hashtags.
+Returns a list of documents with stable ids, names (titles), and their hashtags. Ordered by last updated (desc).
 
 **Query Parameters:**
 - `limit` (optional, default: 100, max: 1000): Maximum number of results.
@@ -13,35 +13,35 @@ Returns a list of all unique documentation names (document titles) and their agg
 
 **Example Request:**
 ```sh
-curl -s 'http://localhost:9002/api/documentations?limit=50&offset=0' | jq
+curl -s 'http://localhost:9002/api/list_all_docs?limit=50&offset=0' | jq
 ```
 
 **Example Response:**
 ```json
 {
-  "compilations": [
-    { "name": "PocketFlow", "hashtags": ["ml", "optimization"] },
-    { "name": "React", "hashtags": ["frontend", "ui"] }
+  "documents": [
+    { "id": "d3b6d6a1-...", "name": "PocketFlow", "hashtags": ["ml", "optimization"] },
+    { "id": "3ae1c920-...", "name": "React", "hashtags": ["frontend", "ui"] }
   ]
 }
 ```
 
 ---
 
-## 2. Get Documentation by Name
+## 2. Fetch Document Content (fetch_doc_content)
 
-**Endpoint:** `GET /api/documentations/:name`
+**Endpoint:** `GET /api/fetch_doc_content/:id`
 
 **Description:**
-Returns the first document whose title matches `:name` (case-insensitive, exact match). The response omits the `image` field.
+Returns the document whose stable id matches `:id`. If not found, treats the value as a legacy title for backward compatibility (case-insensitive). The response omits the `image` field.
 
 **Path Parameter:**
-- `name`: Documentation name (URL-encoded, case-insensitive).
+- `id`: Stable document id (string UUID). Legacy title also accepted temporarily.
 
 **Example Request:**
 ```sh
-curl -s 'http://localhost:9002/api/documentations/pocketflow' | jq
-curl -s 'http://localhost:9002/api/documentations/PocketFlow' | jq
+curl -s 'http://localhost:9002/api/fetch_doc_content/d3b6d6a1-....' | jq
+curl -s 'http://localhost:9002/api/fetch_doc_content/PocketFlow' | jq # legacy name fallback
 ```
 
 **Example Response:**
@@ -49,6 +49,7 @@ curl -s 'http://localhost:9002/api/documentations/PocketFlow' | jq
 {
   "document": {
     "id": 1,
+  "doc_uid": "d3b6d6a1-...",
     "title": "PocketFlow",
     "url": "https://pocketflow.ai/",
     "aiHint": "web document compilation",
@@ -69,6 +70,11 @@ curl -s 'http://localhost:9002/api/documentations/PocketFlow' | jq
 
 ## Notes
 - All endpoints are read-only.
-- The second endpoint is case-insensitive and does not return the `image` field.
-- For best results, always URL-encode the documentation name in requests.
+- The detail endpoint omits the `image` field.
+- The list endpoint returns the stable `id` (UUID) which should be used for subsequent lookups.
+- Deprecated endpoints:
+  - `/api/documentations` -> use `/api/list_all_docs`
+  - `/api/documentations/:id` -> use `/api/fetch_doc_content/:id`
+  - `/api/list-all-docs` (hyphen) -> use `/api/list_all_docs`
+- Legacy title fallback remains for now in `fetch_doc_content`.
 - Hashtags are returned as arrays.

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookText, Globe, Menu, CalendarClock } from 'lucide-react';
+import { BookText, Globe, Menu, CalendarClock, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/', label: 'Scraper', icon: Globe },
   { href: '/library', label: 'Library', icon: BookText },
   { href: '/schedule', label: 'Scheduled Tasks', icon: CalendarClock },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {

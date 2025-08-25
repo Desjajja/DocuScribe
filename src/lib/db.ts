@@ -5,6 +5,7 @@ export type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
 
 export type Document = {
   id: number;
+  doc_uid?: string; // stable external id
   title: string;
   url: string;
   image: string;
