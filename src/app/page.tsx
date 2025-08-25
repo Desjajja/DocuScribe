@@ -14,6 +14,7 @@ import { scrapeUrl } from '@/ai/flows/scrape-url-flow';
 import { generateHashtags } from '@/ai/flows/generate-hashtags-flow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { addDocument, getDocumentByUrl, updateDocument, getDocuments } from '@/app/actions';
+import { replaceDocumentPages, getDocumentationById } from '@/app/actions';
 import { subscribe, getJobs as storeGetJobs, setJobs as storeSetJobs, updateJob as storeUpdateJob, clearJobs, Job as StoreJob, initJobsFromStorage } from '@/state/scrapeJobsStore';
 
 type Schedule = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -101,7 +102,7 @@ export default function ScraperPage() {
         }
       }
 
-      const docData = {
+  const docData = {
         url: documentation.url,
         title: documentation.title,
         content: documentation.content,
@@ -144,6 +145,19 @@ export default function ScraperPage() {
           const newId = await addDocument(docData);
           finalDoc = { ...docData, id: newId };
         }
+      // Persist index & pages collection using doc_uid (need to refetch for stable id)
+      const refreshed = (await getDocuments()).find(d => d.id === finalDoc.id);
+      if (refreshed?.doc_uid) {
+        const indexPage = (documentation as any).__indexPage as string | undefined;
+        const pages = (documentation as any).__pages as string[] | undefined;
+        if (indexPage && pages) {
+          const pageRows = [
+            { page_number: 0, content: indexPage },
+            ...pages.map((c, i) => ({ page_number: i + 1, content: c }))
+          ];
+          await replaceDocumentPages(refreshed.doc_uid, pageRows);
+        }
+      }
       }
       
       updateJob(job.id, { 

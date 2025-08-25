@@ -1,13 +1,18 @@
 
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 
 // Use require for better-sqlite3 to ensure it's treated as a commonjs module
 const Database = require('better-sqlite3');
 
-// Define the path to the database file
-const dbPath = path.resolve(process.cwd(), 'docuscribe.db');
+// Define the path to the database file (moved into ./db directory)
+const dbDir = path.resolve(process.cwd(), 'db');
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+const dbPath = path.join(dbDir, 'docuscribe.db');
 
 // Initialize the database connection
 export const db = new Database(dbPath);
@@ -28,6 +33,16 @@ db.exec(`
     schedule TEXT DEFAULT 'none',
     maxPages INTEGER DEFAULT 5,
     doc_uid TEXT UNIQUE
+  )
+`);
+
+// New: per-document pages (including index page 0)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS document_pages (
+    doc_uid TEXT NOT NULL,
+    page_number INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (doc_uid, page_number)
   )
 `);
 
@@ -53,6 +68,7 @@ try {
   if (!hasAiDescription) {
     db.exec(`ALTER TABLE documents ADD COLUMN aiDescription TEXT`);
   }
+  // (No migration needed for document_pages table aside from creation above)
   // Populate any NULL / empty / too-long legacy (UUID length > 12) doc_uid values with short ids
   const rowsToFix: Array<{ id: number }> = db.prepare(`SELECT id FROM documents WHERE doc_uid IS NULL OR doc_uid = '' OR LENGTH(doc_uid) > 12`).all();
   if (rowsToFix.length > 0) {

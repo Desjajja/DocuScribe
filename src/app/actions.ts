@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db-server';
-import type { Document, Schedule } from '@/lib/db';
+import type { Document, Schedule, DocumentPage } from '@/lib/db';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 
@@ -82,6 +82,27 @@ export async function updateDocument(doc: Document): Promise<void> {
 export async function deleteDocument(id: number): Promise<void> {
   const stmt = db.prepare('DELETE FROM documents WHERE id = ?');
   stmt.run(id);
+}
+
+// --- Document Pages Helpers ---
+export async function replaceDocumentPages(docUid: string, pages: Array<{ page_number: number; content: string }>) {
+  const del = db.prepare('DELETE FROM document_pages WHERE doc_uid = ?');
+  const ins = db.prepare('INSERT INTO document_pages (doc_uid, page_number, content) VALUES (?, ?, ?)');
+  const tx = db.transaction((rows: typeof pages) => {
+    del.run(docUid);
+    for (const p of rows) ins.run(docUid, p.page_number, p.content);
+  });
+  tx(pages);
+}
+
+export async function getIndexPage(docUid: string): Promise<DocumentPage | null> {
+  const row = db.prepare('SELECT * FROM document_pages WHERE doc_uid = ? AND page_number = 0').get(docUid);
+  return row || null;
+}
+
+export async function getDocumentPages(docUid: string): Promise<DocumentPage[]> {
+  const rows = db.prepare('SELECT * FROM document_pages WHERE doc_uid = ? AND page_number > 0 ORDER BY page_number ASC').all(docUid) as any[];
+  return rows as DocumentPage[];
 }
 
 export async function updateDocumentSchedule(id: number, schedule: Schedule, maxPages?: number): Promise<void> {

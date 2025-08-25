@@ -9,6 +9,7 @@
  */
 
 import { ai } from '@/ai/genkit';
+import { replaceDocumentPages } from '@/app/actions';
 import { z } from 'genkit';
 import * as cheerio from 'cheerio';
 import TurndownService from 'turndown';
@@ -360,9 +361,36 @@ const scrapeUrlFlow = ai.defineFlow(
     
     if (results.length === 0) return [];
 
-  const aggregatedContent = results
-      .map(page => `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`)
-      .join('\n\n---\n\n');
+    // Build individual page sections
+    const pageSections = results.map(page => ({
+      title: page.title,
+      url: page.url,
+      section: `## ${page.title}\n\nURL: ${page.url}\n\n${page.content}`,
+    }));
+
+    const separator = '\n\n---\n\n';
+    // Pre-compute word spans including separator contribution (separator adds one token '---')
+    let cumulativeWords = 0;
+    const sepWordCost = 1; // '---' token
+    const spans: Array<{ title: string; start: number; end: number }> = [];
+    pageSections.forEach((p, idx) => {
+      const wordCount = p.section.split(/\s+/).filter(Boolean).length;
+      const start = cumulativeWords + (idx * sepWordCost); // account previous separators
+      const end = start + wordCount;
+      spans.push({ title: p.title, start, end });
+      cumulativeWords += wordCount;
+    });
+
+    const indexLines = (() => {
+      return spans.map((s, i) => {
+        const len = s.end - s.start;
+        return `${String(i+1).padStart(2,' ')}  ${String(s.start).padStart(6,' ')}  ${String(s.end).padStart(6,' ')}  ${String(len).padStart(6,' ')}  ${s.title}`;
+      });
+    })();
+    const indexHeader = ' #   start     end     len  title';
+  const indexSection = `## Index\n\nThe table below maps documentation page titles to word spans (start inclusive, end exclusive) for use with the fetch_doc_content API (start & max_length = end-start).\n\n\`\`\`\n${indexHeader}\n${indexLines.join('\n')}\n\`\`\``;
+  const pagesContent = pageSections.map(p => p.section).join(separator);
+  const aggregatedContent = pagesContent; // DO NOT prepend index; stored separately as page 0
     
     let documentationTitle = 'Documentation';
     if (existingTitle) {
@@ -392,13 +420,21 @@ const scrapeUrlFlow = ai.defineFlow(
   // Skip AI description on updates (existingTitle indicates an update flow)
   const aiDescription = existingTitle ? undefined : await generateFastDescription({ aggregatedContent, resultsCount: results.length, startUrl });
 
-    return [{
+    const docRecord = {
       url: startUrl,
       title: documentationTitle,
       content: aggregatedContent,
       image: coverImage,
       aiDescription,
-    }];
+    } as any;
+
+    // After caller inserts/updates main document, they must call replaceDocumentPages with stable doc_uid.
+    // We cannot do that here because doc_uid is generated upon insert. So we return index + pages metadata
+    // so the caller can persist pages after main doc creation/update.
+    (docRecord as any).__indexPage = indexSection;
+    (docRecord as any).__pages = pageSections.map(p => p.section);
+
+    return [docRecord];
   }
 );
 

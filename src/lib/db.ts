@@ -17,3 +17,9 @@ export type Document = {
   schedule: Schedule;
   maxPages: number;
 };
+
+export type DocumentPage = {
+  doc_uid: string;
+  page_number: number; // 0 = index page, 1..N content pages
+  content: string;
+};
